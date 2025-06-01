@@ -166,13 +166,18 @@ def extract_documents_from_file(filepath: str, relative_path: str) -> list[tuple
                         if doc_tuple: docs_with_metadata.append(doc_tuple)
             except Exception as e_xlsx: print(f"  Warn: Polars Excel read fail for {filepath}, trying openpyxl direct: {e_xlsx}") # Keep fallback
         elif file_type == ".pdf":
-            try: reader = PdfReader(filepath);
+            try:
+                reader = PdfReader(filepath)
                 if not reader.pages: return [];
                 for i, page in enumerate(reader.pages): cleaned = common_utils.clean_text(page.extract_text() or "");
                 if cleaned: docs_with_metadata.append((cleaned, {**base_metadata, "page_number": i + 1}))
             except Exception as e_pdf: print(f" Error processing PDF {filepath}: {e_pdf}")
         elif file_type == ".docx":
-            try: doc = DocxDocument(filepath); cleaned = common_utils.clean_text("\n".join([p.text for p in doc.paragraphs if p.text]));
+            try:
+                doc = DocxDocument(filepath)
+                cleaned = common_utils.clean_text(
+                    "\n".join([p.text for p in doc.paragraphs if p.text])
+                )
                 if cleaned: docs_with_metadata.append((cleaned, base_metadata.copy()))
             except Exception as e_docx: print(f" Error processing DOCX {filepath}: {e_docx}")
         elif file_type == ".json":
@@ -188,10 +193,16 @@ def extract_documents_from_file(filepath: str, relative_path: str) -> list[tuple
             try:
                 book = epub.read_epub(filepath)
                 for item in book.get_items_of_type(ITEM_DOCUMENT):
-                    cleaned = common_utils.clean_text(BeautifulSoup(item.get_content(), 'html.parser').get_text(separator='\n'));
-                    if cleaned: meta = {**base_metadata, "epub_item_id": item.get_id(), "epub_item_name": item.get_name()};
-                    try: title_meta = book.get_metadata('DC', 'title')
-                    except: pass
+                    cleaned = common_utils.clean_text(BeautifulSoup(item.get_content(), 'html.parser').get_text(separator='\n'))
+                    if cleaned:
+                        meta = {
+                            **base_metadata,
+                            "epub_item_id": item.get_id(),
+                            "epub_item_name": item.get_name(),
+                        }
+                    try:
+                        title_meta = book.get_metadata("DC", "title")
+                    except pass
                     else: 
                         if title_meta: meta["epub_book_title"] = title_meta[0][0]
                     docs_with_metadata.append((cleaned, meta))
