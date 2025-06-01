@@ -150,7 +150,6 @@ CHUNKER_DEFAULTS = {
         # 'rules' can be set to "markdown" in the orchestrator if DOCX/EPUB converted to MD.
         # Chonkie's RecursiveChunker.from_recipe("markdown", lang="en") is a way to get MD rules.
         "rules": None,                    # Default to Chonkie's internal general separators if not specified (e.g. for plain text)
-        "lang": "en",                     # Language for language-specific rules (e.g. markdown sentence splitting)
     },
     "chonkie_sdpm": { # Semantic Density Peak Maximization Chunker
         "embedding_model": "minishlab/potion-base-8M", # Embedding model for semantic calculations

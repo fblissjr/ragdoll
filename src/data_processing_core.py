@@ -28,8 +28,18 @@ try:
     # print("Data Processing Core: Chonkie chunkers imported.") # Already printed by individual modules
 except ImportError as e_chonk:
     print(f"Data Processing Core: Warning - Chonkie chunkers might be unavailable: {e_chonk}")
-    class SDPMChunker:pass; class SemanticChunker:pass; class NeuralChunker:pass; 
-    class RecursiveChunker:pass; class SentenceChunker:pass; class TokenChunker:pass;
+    class SDPMChunker:
+        pass
+    class SemanticChunker:
+        pass
+    class NeuralChunker:
+        pass
+    class RecursiveChunker:
+        pass
+    class SentenceChunker:
+        pass
+    class TokenChunker:
+        pass
     
 # Global variable for worker chunker instance
 WORKER_CHUNKER_INSTANCE: Optional[ChonkieChunkerInstanceType] = None 
@@ -63,8 +73,47 @@ def _init_worker_chunker(chunker_config_from_orchestrator: Dict[str, Any]):
             WORKER_CHUNKER_INSTANCE = NeuralChunker(**params_for_constructor)
         elif chunker_type == "chonkie_recursive":
             tokenizer_setting = params_for_constructor.get("tokenizer_or_token_counter")
-            if isinstance(tokenizer_setting, str) and tokenizer_setting == "ragdoll_utils.BGE_TOKENIZER_INSTANCE":
-                params_for_constructor["tokenizer_or_token_counter"] = ragdoll_utils.BGE_TOKENIZER_INSTANCE
+            if isinstance(tokenizer_setting, str):
+                if tokenizer_setting == "ragdoll_utils.BGE_TOKENIZER_INSTANCE":
+                    params_for_constructor["tokenizer_or_token_counter"] = ragdoll_utils.BGE_TOKENIZER_INSTANCE
+                # Add other string-to-function/object resolutions if necessary
+
+            # Ensure 'rules' is a RecursiveRules object.
+            # The 'rules' key in params_for_constructor might come from ragdoll_config.CHUNKER_DEFAULTS
+            # or be overridden by pipeline_orchestrator._get_specific_chunker_params if a specific
+            # CLI/API arg for rules was provided.
+            
+            current_rules_value = params_for_constructor.get("rules")
+            
+            if current_rules_value is None: # If no rules are specified, use Chonkie's default rules.
+                try:
+                    from chonkie.chunkers.recursive import RecursiveRules
+                    print(f"  Worker Info (chonkie_recursive): 'rules' is None. Initializing with default RecursiveRules().")
+                    params_for_constructor["rules"] = RecursiveRules() 
+                except ImportError:
+                    print("  Worker Error (chonkie_recursive): Could not import RecursiveRules. Chonkie may fail if 'rules' is required.")
+                except Exception as e_rules:
+                    print(f"  Worker Error (chonkie_recursive): Could not create default RecursiveRules: {e_rules}")
+            
+            elif isinstance(current_rules_value, str): # If rules is a string (e.g., "markdown")
+                try:
+                    from chonkie.chunkers.recursive import RecursiveRules
+                    # 'lang' might be passed in params_for_constructor if set by orchestrator based on config
+                    lang_for_recipe = params_for_constructor.pop("lang", "en") # Use 'en' if 'lang' not present, and remove lang
+                    print(f"  Worker Info (chonkie_recursive): 'rules' is string '{current_rules_value}'. Attempting to create RecursiveRules.from_recipe('{current_rules_value}', lang='{lang_for_recipe}').")
+                    params_for_constructor["rules"] = RecursiveRules.from_recipe(current_rules_value, lang=lang_for_recipe)
+                except ImportError:
+                    print(f"  Worker Error (chonkie_recursive): Could not import RecursiveRules to create recipe '{current_rules_value}'.")
+                except Exception as e_recipe: # Catch errors from from_recipe
+                    print(f"  Worker Error (chonkie_recursive): Could not create RecursiveRules from recipe '{current_rules_value}': {e_recipe}. Falling back to default rules.")
+                    # Fallback to default rules if recipe creation fails
+                    try:
+                        from chonkie.chunkers.recursive import RecursiveRules
+                        params_for_constructor["rules"] = RecursiveRules()
+                    except: pass # If even default fails, let the main constructor attempt raise.
+            
+            # If current_rules_value is already a RecursiveRules object (e.g., set by orchestrator), it will be used directly.
+            
             WORKER_CHUNKER_INSTANCE = RecursiveChunker(**params_for_constructor)
         elif chunker_type == "chonkie_sentence":
             tokenizer_setting = params_for_constructor.get("tokenizer_or_token_counter")

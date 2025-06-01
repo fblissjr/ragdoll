@@ -1,13 +1,13 @@
 # src/embedding_module.py
 # This module is responsible for loading embedding models and generating vector embeddings for text.
-
 import numpy as np
 from vicinity import Metric 
 from model2vec import StaticModel as Model2VecStaticModel 
 from sentence_transformers import SentenceTransformer 
 import torch 
-import os # For path checking
-import json # For loading config.json
+import os 
+import json 
+from typing import Optional, Tuple, List
 
 try:
     from sentence_transformers import SparseEncoder as SbertSparseEncoder
