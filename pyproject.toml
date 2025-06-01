@@ -1,0 +1,153 @@
+[project]
+name = "ragdoll"
+version = "0.5.0" 
+description = "RAG but with local models and model2vec static embedding models, and some more experimental fun"
+readme = "README.md"
+requires-python = ">=3.12
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Fred Bliss" }
+]
+classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Text Processing :: Indexing",
+]
+
+# Core dependencies based on the RAGdoll files
+dependencies = [
+    "fastapi>=0.100",               # For the API service
+    "uvicorn[standard]>=0.20",      # ASGI server for FastAPI
+    "requests>=2.25",               # For llm_interface and data_service_client
+    "numpy>=1.21",                  # For numerical operations, embeddings
+    "vicinity>=0.1.0",              # Vector store (ensure version compatibility)
+    "sentence-transformers>=2.2.0", # For embedding_module and reranker_module
+    "torch>=1.13",                  # Core ML library
+    "transformers>=4.20",           # For Hugging Face models (tokenizer, classifier)
+    "polars>=0.19",                 # For tabular data processing
+    "pyarrow>=10.0",                # Used by Polars and datasets
+    "pypdf>=3.0",                   # PDF parsing
+    "python-docx>=1.0",             # DOCX parsing (fallback)
+    "pypandoc>=1.11",               # DOCX to Markdown conversion (requires Pandoc installed)
+    "openpyxl>=3.0",                # Excel reading engine for Polars
+    "ebooklib>=0.18",               # EPUB parsing
+    "beautifulsoup4>=4.9",          # HTML/XML parsing (for EPUB)
+    "chonkie>=0.6.0",               # Advanced chunking - Consider extras if needed: chonkie[hub,viz,semantic,st,code,neural]
+    "model2vec>=0.3.0",             # For Potion models (ensure version used by Tokenlearn is compatible)
+    "umap-learn>=0.5",              # For visualization
+    "scikit-learn>=1.0",            # For PCA (if used by Tokenlearn/embedding) and other ML utils
+    "tqdm>=4.60",                   # Progress bars
+    # "tokenlearn>=0.2.0",          # Optional: if you want to bundle running tokenlearn via RAGdoll's makefile easily
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",       # For test coverage
+    "mypy>=1.0",        # Static type checking
+    "ruff>=0.1.0",      # Linter and formatter
+    "pre-commit>=3.0",  # For managing pre-commit hooks
+    "ipython",          # Enhanced Python shell for debugging/exploration
+    "httpx>=0.24",      # For testing FastAPI async endpoints (alternative to TestClient)
+    # Add 'tokenlearn>=0.2.0' here if you want 'make install-dev' to pull it for helper targets
+    # "tokenlearn>=0.2.0", 
+]
+# tbd work in progress
+# topicmodeling = [
+#     "bertopic>=0.16"
+# ]
+
+[project.scripts]
+ragdoll-process = "src.process_data_cli:main_cli" # CLI to run data processing
+ragdoll-cli = "src.rag_cli:main"                  # CLI for RAG and explore modes
+# ragdoll-api = "src.main_api:tbd" # tbd
+
+[project.urls]
+homepage = "https://github.com/fblissjr/ragdoll" 
+repository = "https://github.com/fblissjr/ragdoll"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src"] 
+addopts = "-v --cov=src --cov-report=term-missing --cov-report=html"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+exclude = [
+    ".bzr", ".direnv", ".eggs", ".git", ".hg", ".mypy_cache", ".nox", ".pants.d",
+    ".ruff_cache", ".svn", ".tox", ".venv", "__pypackages__", "build", "dist",
+    "node_modules", "venv", "htmlcov", # Add coverage output
+    "data_for_tokenlearn", "custom_models", "vector_store_output", "sample_docs_for_processing" # RAGdoll specific
+]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "C90", # McCabe complexity
+    "N",  # pep8-naming
+    "UP", # pyupgrade
+    "ANN",# flake8-annotations
+    "BLE",# flake8-blind-except
+    "B",  # flake8-bugbear
+    "A",  # flake8-builtins
+    "COM",# flake8-commas
+    "D",  # pydocstyle (select specific D codes below or disable some)
+    "ISC",# flake8-implicit-str-concat
+    "G",  # flake8-logging-format
+    "PIE",# flake8-pie
+    "T20",# flake8-print
+    "Q",  # flake8-quotes
+    "RET",# flake8-return
+    "SIM",# flake8-simplify
+    "TID",# flake8-tidy-imports
+    "ARG",# flake8-unused-arguments
+    "PTH",# flake8-use-pathlib
+    "PGH",# pygrep-hooks
+    "RUF",# Ruff-specific rules
+]
+ignore = [
+    "ANN101", # Missing type annotation for self
+    "ANN102", # Missing type annotation for cls
+    "ANN401", # Dynamically typed expressions (Any) are disallowed
+    "D100",   # Missing docstring in public module
+    "D101",   # Missing docstring in public class
+    "D102",   # Missing docstring in public method
+    "D103",   # Missing docstring in public function
+    "D104",   # Missing docstring in public package
+    "D105",   # Missing docstring in magic method
+    "D107",   # Missing docstring in __init__
+    "D203",   # 1 blank line required before class docstring
+    "D212",   # Multi-line summary first line should be on separate line
+    "D415",   # First line of docstring should end with a period (can be annoying)
+    "COM812", # Comma missing before trailing parenthesis
+    "ISC001", # Implicitly concatenated string literals
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

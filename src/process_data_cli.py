@@ -1,106 +1,186 @@
 # process_data_cli.py
-import argparse
-import os
-import common_utils 
-import pipeline_orchestrator 
+# Command-Line Interface for orchestrating the RAGdoll data processing pipeline.
+
+import argparse # For parsing command-line arguments
+import os       # For os.path related checks if any (though mostly handled by orchestrator)
+
+# Project-specific imports
+from ragdoll import ragdoll_config # Default configurations
+from ragdoll import pipeline_orchestrator # The main pipeline execution logic
 
 def main_cli():
-    parser = argparse.ArgumentParser(description="RAGdoll Data Processing CLI - Orchestrator")
+    """
+    Sets up and parses command-line arguments for the data processing pipeline,
+    then calls the pipeline orchestrator with the gathered configuration.
+    """
+    parser = argparse.ArgumentParser(
+        description="RAGdoll Data Processing CLI - Orchestrates document ingestion, chunking, embedding, and vector store creation.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter # Shows default values in help message
+    )
     
-    # General Paths & Behavior
-    pg = parser.add_argument_group('General Pipeline Settings')
-    pg.add_argument("--docs-folder", type=str, default="docs_input")
-    pg.add_argument("--vector-data-dir", type=str, default="vector_store_data")
-    pg.add_argument("--overwrite", action="store_true", default=False) # Default False for safety
-    pg.add_argument("--gpu-device-id", type=int, default=common_utils.DEFAULT_GPU_DEVICE_ID_PROCESSING)
-    pg.add_argument("--verbose", "-v", action="store_true", default=False)
+    # --- General Pipeline Settings ---
+    # Arguments related to file paths, processing behavior, and resources.
+    pg_general = parser.add_argument_group('General Pipeline Settings')
+    pg_general.add_argument("--docs-folder", type=str, default="docs_input",
+                            help="Path to the folder containing source documents to process.")
+    pg_general.add_argument("--vector-data-dir", type=str, default="vector_store_data",
+                            help="Directory where processed data and the vector store will be saved.")
+    pg_general.add_argument("--overwrite", action="store_true", default=False,
+                            help="If set, overwrite existing data in the vector-data-dir.")
+    pg_general.add_argument("--gpu-device-id", type=int, default=ragdoll_config.DEFAULT_GPU_DEVICE_ID_PROCESSING,
+                            help="GPU device ID to use for processing (e.g., embeddings, classification). -1 for CPU.")
+    pg_general.add_argument("--verbose", "-v", action="store_true", default=False,
+                            help="Enable verbose logging output during processing.")
 
-    # Embedding Model
-    emb_g = parser.add_argument_group('Pipeline Embedding Model (for chunk vectorization)')
-    emb_g.add_argument("--embedding-model-name", type=str, default=common_utils.DEFAULT_PIPELINE_EMBEDDING_MODEL)
-    emb_g.add_argument("--embedding-model-type", type=str, choices=["model2vec", "sentence-transformers"], default=None)
-    emb_g.add_argument("--default-embedding-dim", type=int, default=None)
-    emb_g.add_argument("--vicinity-metric", type=str, choices=["COSINE", "INNER_PRODUCT", "EUCLIDEAN"], default=None)
+    # --- Embedding Model Configuration ---
+    # Arguments for selecting and configuring the embedding model used for document chunks.
+    pg_embedding = parser.add_argument_group('Pipeline Embedding Model (for chunk vectorization)')
+    pg_embedding.add_argument("--embedding-model-name", type=str, default=ragdoll_config.DEFAULT_PIPELINE_EMBEDDING_MODEL,
+                              help="Name or path of the sentence-transformer or model2vec model for embeddings.")
+    pg_embedding.add_argument("--embedding-model-type", type=str, choices=["model2vec", "sentence-transformers"], default=None,
+                              help="Explicitly specify the type of embedding model (model2vec or sentence-transformers). If None, it will be inferred.")
+    pg_embedding.add_argument("--default-embedding-dim", type=int, default=None,
+                              help="Expected dimension of embeddings. If None, it will be inferred. Useful for validation or if inference fails.")
+    pg_embedding.add_argument("--vicinity-metric", type=str, choices=["COSINE", "INNER_PRODUCT", "EUCLIDEAN"], default=None,
+                              help="Distance metric for the Vicinity vector store. If None, it's inferred from the embedding model type.")
 
-    # Chunker Selection
-    chunk_g = parser.add_argument_group('Chunking Strategy')
-    chunk_g.add_argument("--chunker-type", type=str, 
-                         choices=["semchunk", "chonkie_sdpm", "chonkie_semantic", "chonkie_neural", "chonkie_recursive", "chonkie_sentence", "chonkie_token"], 
-                         default=common_utils.DEFAULT_CHUNKER_TYPE)
-    chunk_g.add_argument("--num-processing-workers", type=int, default=common_utils.DEFAULT_CHUNK_PROCESSING_WORKERS)
+    # --- Chunking Strategy Configuration ---
+    # Arguments for choosing and configuring the text chunking method.
+    pg_chunking = parser.add_argument_group('Chunking Strategy')
+    pg_chunking.add_argument("--chunker-type", type=str, 
+                             choices=list(ragdoll_config.CHUNKER_DEFAULTS.keys()), # Dynamically get choices from config
+                             default=ragdoll_config.DEFAULT_CHUNKER_TYPE,
+                             help="Type of chunker to use for splitting documents.")
+    pg_chunking.add_argument("--num-processing-workers", type=int, default=ragdoll_config.DEFAULT_CHUNK_PROCESSING_WORKERS,
+                             help="Number of worker processes for parallel document chunking.")
     
-    # Semchunk specific
-    semchunk_p = parser.add_argument_group('Semchunk Parameters (if chunker-type=semchunk)')
-    semchunk_p.add_argument("--semchunk-max-tokens-chunk", type=int, default=common_utils.CHUNKER_DEFAULTS["semchunk"]["max_tokens_chunk"])
-    semchunk_p.add_argument("--semchunk-overlap-percent", type=int, default=common_utils.CHUNKER_DEFAULTS["semchunk"]["overlap_percent"])
+    # Semchunk parameters are removed as semchunk is deprecated.
+
+    # --- Chonkie SDPM/Semantic Chunker Parameters ---
+    # These parameters are relevant if chunker-type is chonkie_sdpm or chonkie_semantic.
+    pg_chonkie_semantic_dense = parser.add_argument_group('Chonkie SDPM/Semantic Parameters')
+    pg_chonkie_semantic_dense.add_argument("--chonkie-embedding-model", type=str, 
+                                           default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_sdpm"]["embedding_model"],
+                                           help="Embedding model used internally by Chonkie SDPM/Semantic chunkers.")
+    pg_chonkie_semantic_dense.add_argument("--chonkie-target-chunk-size", type=int, 
+                                           default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_sdpm"]["chunk_size"],
+                                           help="Target chunk size (in tokens) for Chonkie SDPM/Semantic chunkers.")
+    pg_chonkie_semantic_dense.add_argument("--chonkie-similarity-threshold", type=str, 
+                                           default=str(ragdoll_config.CHUNKER_DEFAULTS["chonkie_sdpm"]["threshold"]),
+                                           help="Similarity threshold for Chonkie SDPM/Semantic. Can be float (0-1), int (1-100 percentile), or 'auto'/'smart'.")
+    pg_chonkie_semantic_dense.add_argument("--chonkie-min-sentences", type=int, 
+                                           default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_sdpm"]["min_sentences"],
+                                           help="Minimum sentences per chunk for Chonkie SDPM/Semantic/Sentence chunkers.")
+    pg_chonkie_semantic_dense.add_argument("--chonkie-mode", type=str, choices=["window", "cumulative"], 
+                                           default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_sdpm"]["mode"],
+                                           help="Mode for similarity calculation in Chonkie SDPM/Semantic ('window' or 'cumulative').")
+    pg_chonkie_semantic_dense.add_argument("--chonkie-similarity-window", type=int, 
+                                           default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_sdpm"]["similarity_window"],
+                                           help="Similarity window size for Chonkie SDPM/Semantic.")
+    pg_chonkie_semantic_dense.add_argument("--chonkie-min-chunk-size", type=int, 
+                                           default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_sdpm"]["min_chunk_size"],
+                                           help="Minimum final chunk size (tokens) for Chonkie SDPM/Semantic.")
+
+    # --- Chonkie SDPM Specific Parameters ---
+    pg_chonkie_sdpm_specific = parser.add_argument_group('Chonkie SDPM Specific Parameters')
+    pg_chonkie_sdpm_specific.add_argument("--chonkie-skip-window", type=int, 
+                                          default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_sdpm"]["skip_window"],
+                                          help="Skip window for peak finding in Chonkie SDPM.")
     
-    # Chonkie common (SDPM, Semantic)
-    chonkie_s_p = parser.add_argument_group('Chonkie SDPM/Semantic Parameters')
-    chonkie_s_p.add_argument("--chonkie-embedding-model", type=str, default=common_utils.CHUNKER_DEFAULTS["chonkie_sdpm"]["embedding_model"])
-    chonkie_s_p.add_argument("--chonkie-target-chunk-size", type=int, default=common_utils.CHUNKER_DEFAULTS["chonkie_sdpm"]["target_chunk_size"])
-    chonkie_s_p.add_argument("--chonkie-similarity-threshold", type=str, default=str(common_utils.CHUNKER_DEFAULTS["chonkie_sdpm"]["threshold"]), help='Float (0-1), Int (1-100 percentile), or "auto"/"smart".')
-    chonkie_s_p.add_argument("--chonkie-min-sentences", type=int, default=common_utils.CHUNKER_DEFAULTS["chonkie_sdpm"]["min_sentences"])
-    chonkie_s_p.add_argument("--chonkie-mode", type=str, choices=["window", "cumulative"], default=common_utils.CHUNKER_DEFAULTS["chonkie_sdpm"]["mode"])
-    chonkie_s_p.add_argument("--chonkie-similarity-window", type=int, default=common_utils.CHUNKER_DEFAULTS["chonkie_sdpm"]["similarity_window"])
-    chonkie_s_p.add_argument("--chonkie-min-chunk-size", type=int, default=common_utils.CHUNKER_DEFAULTS["chonkie_sdpm"]["min_chunk_size"])
+    # --- Chonkie Neural Chunker Specific Parameters ---
+    pg_chonkie_neural_specific = parser.add_argument_group('Chonkie Neural Specific Parameters')
+    pg_chonkie_neural_specific.add_argument("--chonkie-neural-model", type=str, 
+                                            default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_neural"]["model"],
+                                            help="Segmentation model for Chonkie Neural chunker.")
+    pg_chonkie_neural_specific.add_argument("--chonkie-neural-tokenizer", type=str, 
+                                            default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_neural"].get("tokenizer", 
+                                                                      ragdoll_config.CHUNKER_DEFAULTS["chonkie_neural"]["model"]),
+                                            help="Tokenizer for the Chonkie Neural model (often same as model).")
+    pg_chonkie_neural_specific.add_argument("--chonkie-neural-stride", type=int, 
+                                            default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_neural"]["stride"],
+                                            help="Stride for Chonkie Neural chunker inference.")
+    pg_chonkie_neural_specific.add_argument("--chonkie-neural-min-chars", type=int, 
+                                            default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_neural"]["min_characters_per_chunk"],
+                                            help="Minimum characters per chunk for Chonkie Neural.")
 
-    # Chonkie SDPM specific
-    chonkie_sdpm_p = parser.add_argument_group('Chonkie SDPM Specific (if chunker-type=chonkie_sdpm)')
-    chonkie_sdpm_p.add_argument("--chonkie-skip-window", type=int, default=common_utils.CHUNKER_DEFAULTS["chonkie_sdpm"]["skip_window"])
-    
-    # Chonkie Neural specific
-    chonkie_n_p = parser.add_argument_group('Chonkie Neural Specific (if chunker-type=chonkie_neural)')
-    chonkie_n_p.add_argument("--chonkie-neural-model", type=str, default=common_utils.CHUNKER_DEFAULTS["chonkie_neural"]["segmentation_model"])
-    chonkie_n_p.add_argument("--chonkie-neural-stride", type=int, default=common_utils.CHUNKER_DEFAULTS["chonkie_neural"]["stride"])
-    chonkie_n_p.add_argument("--chonkie-neural-min-chars", type=int, default=common_utils.CHUNKER_DEFAULTS["chonkie_neural"]["min_chars_per_chunk"])
+    # --- Chonkie Basic Chunker Parameters (Recursive, Sentence, Token) ---
+    pg_chonkie_basic = parser.add_argument_group('Chonkie Basic Chunkers (Recursive, Sentence, Token) Parameters')
+    pg_chonkie_basic.add_argument("--chonkie-basic-tokenizer", type=str, 
+                                  default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_recursive"]["tokenizer_or_token_counter"],
+                                  help="Tokenizer or token counter function name (e.g., 'gpt2', 'ragdoll_utils.BGE_TOKENIZER_INSTANCE') for basic Chonkie chunkers.")
+    pg_chonkie_basic.add_argument("--chonkie-basic-chunk-size", type=int, 
+                                  default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_recursive"]["chunk_size"],
+                                  help="Target chunk size (tokens) for basic Chonkie chunkers.")
+    pg_chonkie_basic.add_argument("--chonkie-basic-min-chars", type=int, 
+                                  default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_recursive"]["min_characters_per_chunk"],
+                                  help="Minimum characters per chunk (for Recursive) or per sentence (for Sentence).")
+    pg_chonkie_basic.add_argument("--chonkie-sentence-overlap", type=int, 
+                                  default=ragdoll_config.CHUNKER_DEFAULTS["chonkie_sentence"]["chunk_overlap"], # Default from sentence
+                                  help="Chunk overlap (tokens or fraction if Chonkie supports) for Sentence/Token chunkers.")
 
-    # Chonkie Recursive/Sentence/Token (Basic) specific - these often share tokenizer and chunk_size concepts
-    chonkie_b_p = parser.add_argument_group('Chonkie Basic Chunkers (Recursive, Sentence, Token)')
-    chonkie_b_p.add_argument("--chonkie-basic-tokenizer", type=str, default=common_utils.CHUNKER_DEFAULTS["chonkie_recursive"]["tokenizer_or_token_counter"])
-    chonkie_b_p.add_argument("--chonkie-basic-chunk-size", type=int, default=common_utils.CHUNKER_DEFAULTS["chonkie_recursive"]["chunk_size"])
-    chonkie_b_p.add_argument("--chonkie-basic-min-chars", type=int, default=common_utils.CHUNKER_DEFAULTS["chonkie_recursive"]["min_characters_per_chunk"])
-    # Add overlap for Sentence/Token if they become primary options
-    chonkie_b_p.add_argument("--chonkie-sentence-overlap", type=int, default=common_utils.CHUNKER_DEFAULTS["chonkie_sentence"]["chunk_overlap"])
+    # --- Zero-Shot Classification Configuration ---
+    pg_classification = parser.add_argument_group('Zero-Shot Classification')
+    pg_classification.add_argument("--enable-classification", action="store_true",
+                                   help="Enable zero-shot classification of text chunks.")
+    pg_classification.add_argument("--classifier-model-name", type=str, default=ragdoll_config.DEFAULT_CLASSIFIER_MODEL,
+                                   help="Hugging Face model name for zero-shot classification.")
+    pg_classification.add_argument("--candidate-labels", type=str, nargs="+", default=None, # Default is None, orchestrator will use config default if None
+                                   help=f"Space-separated list of candidate labels for classification. Defaults to a predefined list in config ({len(ragdoll_config.DEFAULT_CLASSIFICATION_LABELS)} labels).")
+    pg_classification.add_argument("--classification-batch-size", type=int, default=ragdoll_config.DEFAULT_CLASSIFICATION_BATCH_SIZE,
+                                   help="Batch size for chunk classification.")
 
-
-    # Classification
-    class_g = parser.add_argument_group('Zero-Shot Classification')
-    class_g.add_argument("--enable-classification", action="store_true")
-    class_g.add_argument("--classifier-model-name", type=str, default=common_utils.DEFAULT_CLASSIFIER_MODEL)
-    class_g.add_argument("--candidate-labels", type=str, nargs="+", default=None)
-    class_g.add_argument("--classification-batch-size", type=int, default=common_utils.DEFAULT_CLASSIFICATION_BATCH_SIZE)
-
-    # Visualization
-    viz_g = parser.add_argument_group('UMAP Visualization Data') # Same
-    viz_g.add_argument("--prepare-viz-data", action="store_true")
-    viz_g.add_argument("--viz-output-file", type=str, default=common_utils.VISUALIZATION_DATA_FILENAME)
-    viz_g.add_argument("--umap-neighbors", type=int, default=common_utils.DEFAULT_UMAP_NEIGHBORS)
-    viz_g.add_argument("--umap-min-dist", type=float, default=common_utils.DEFAULT_UMAP_MIN_DIST)
-    viz_g.add_argument("--umap-metric", type=str, default=common_utils.DEFAULT_UMAP_METRIC)
+    # --- UMAP Visualization Data Generation ---
+    pg_visualization = parser.add_argument_group('UMAP Visualization Data')
+    pg_visualization.add_argument("--prepare-viz-data", action="store_true",
+                                  help="Generate UMAP 2D projection data for visualization.")
+    pg_visualization.add_argument("--viz-output-file", type=str, default=ragdoll_config.VISUALIZATION_DATA_FILENAME,
+                                  help="Filename for the UMAP visualization JSON data.")
+    pg_visualization.add_argument("--umap-neighbors", type=int, default=ragdoll_config.DEFAULT_UMAP_NEIGHBORS,
+                                  help="Number of neighbors for UMAP algorithm.")
+    pg_visualization.add_argument("--umap-min-dist", type=float, default=ragdoll_config.DEFAULT_UMAP_MIN_DIST,
+                                  help="Minimum distance for UMAP algorithm.")
+    pg_visualization.add_argument("--umap-metric", type=str, default=ragdoll_config.DEFAULT_UMAP_METRIC,
+                                  help="Distance metric for UMAP algorithm (e.g., 'cosine', 'euclidean').")
     
     args = parser.parse_args()
 
-    pipeline_config = vars(args).copy()
+    # Prepare the configuration dictionary to pass to the orchestrator
+    pipeline_config = vars(args).copy() # Convert argparse.Namespace to a dictionary
+
+    # Handle default candidate labels if not provided via CLI
     if pipeline_config["candidate_labels"] is None: 
-        pipeline_config["candidate_labels"] = list(common_utils.DEFAULT_CLASSIFICATION_LABELS)
+        pipeline_config["candidate_labels"] = list(ragdoll_config.DEFAULT_CLASSIFICATION_LABELS) # Ensure it's a list for orchestrator
     
-    # Convert chonkie_similarity_threshold to float/int/"auto" if needed
-    try:
-        pipeline_config["chonkie_similarity_threshold"] = float(args.chonkie_similarity_threshold)
-    except ValueError:
+    # Parse chonkie_similarity_threshold: it can be 'auto', 'smart', a float, or an int (percentile)
+    # The orchestrator's _get_specific_chunker_params will pass this string/value to Chonkie,
+    # which should handle parsing "auto"/"smart" or numeric types for its 'threshold' parameter.
+    # No explicit conversion is strictly needed here if Chonkie handles it, but validation is good.
+    sim_thresh_str = args.chonkie_similarity_threshold
+    if sim_thresh_str.lower() not in ["auto", "smart"]:
         try:
-            pipeline_config["chonkie_similarity_threshold"] = int(args.chonkie_similarity_threshold)
+            # Attempt to convert to float or int if not 'auto' or 'smart'
+            # This allows users to pass numbers directly via CLI.
+            # The `pipeline_config` will hold the converted numeric type or the original string.
+            pipeline_config["chonkie_similarity_threshold"] = float(sim_thresh_str)
         except ValueError:
-            if args.chonkie_similarity_threshold.lower() not in ["auto", "smart"]: # "smart" might be for SemanticChunker
-                print(f"Warning: Invalid chonkie_similarity_threshold '{args.chonkie_similarity_threshold}'. Using 'auto'.")
-                pipeline_config["chonkie_similarity_threshold"] = "auto"
-            else:
-                 pipeline_config["chonkie_similarity_threshold"] = args.chonkie_similarity_threshold.lower()
+            try:
+                pipeline_config["chonkie_similarity_threshold"] = int(sim_thresh_str)
+            except ValueError:
+                # If it's not 'auto', 'smart', float, or int, keep the string. Chonkie might error.
+                print(f"CLI Warning: chonkie_similarity_threshold '{sim_thresh_str}' is not 'auto', 'smart', or a valid number. Passing as string.")
+                pipeline_config["chonkie_similarity_threshold"] = sim_thresh_str
+    else:
+        pipeline_config["chonkie_similarity_threshold"] = sim_thresh_str.lower()
 
 
+    # Run the full data processing pipeline using the orchestrator
     success = pipeline_orchestrator.run_full_processing_pipeline(pipeline_config)
-    if success: print("\nCLI: Pipeline completed successfully via orchestrator.")
-    else: print("\nCLI: Pipeline failed or aborted by orchestrator.")
+    
+    if success: 
+        print("\nCLI: Pipeline processing completed successfully via orchestrator.")
+    else: 
+        print("\nCLI: Pipeline processing failed or was aborted by the orchestrator.")
 
 if __name__ == "__main__":
+    # This entry point allows the script to be run directly from the command line.
     main_cli()

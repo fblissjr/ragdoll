@@ -1,49 +1,21 @@
-# common_utils.py
-import os
-import re
-from transformers import AutoTokenizer as HFAutoTokenizer
+# src/ragdoll_config.py
+# This module defines default configurations, constants, and model parameters
+# for the RAGdoll project. It helps centralize settings for easier management.
 
-# --- Shared File Path Constants ---
-VECTOR_STORE_SUBDIR_NAME = "vicinity_store"
-TEXT_CHUNKS_FILENAME = "text_chunks.json"
-CHUNK_IDS_FILENAME = "chunk_ids.json"
-DETAILED_CHUNK_METADATA_FILENAME = "detailed_chunk_metadata.json"
-CHUNK_VECTORS_FILENAME = "chunk_vectors.npy"
-VISUALIZATION_DATA_FILENAME = "visualization_plot_data.json"
+import os # For os.path, os.cpu_count, and environment variable access
 
-# --- BGE Tokenizer (for client-side context counting & some chunkers if configured) ---
-BGE_TOKENIZER_INSTANCE = None
-TOKEN_COUNT_FALLBACK_ACTIVE = False
-try:
-    BGE_TOKENIZER_INSTANCE = HFAutoTokenizer.from_pretrained("baai/bge-base-en-v1.5")
-    print("Common Utils: BGE Tokenizer (baai/bge-base-en-v1.5) loaded successfully.")
-except Exception as e_bge_load:
-    print(f"Common Utils: WARNING - Error loading BGE tokenizer: {e_bge_load}. Using basic split() for token counting.")
-    BGE_TOKENIZER_INSTANCE = lambda text: len(str(text).split()) 
-    TOKEN_COUNT_FALLBACK_ACTIVE = True
+# --- Shared File Path Constants for Data Storage ---
+# These define filenames used when saving processed data.
+VECTOR_STORE_SUBDIR_NAME = "vicinity_store" # Subdirectory within the main data_dir for Vicinity store
+TEXT_CHUNKS_FILENAME = "text_chunks.json"   # File storing all extracted text chunks
+CHUNK_IDS_FILENAME = "chunk_ids.json"       # File storing IDs for each chunk, corresponding to text_chunks
+DETAILED_CHUNK_METADATA_FILENAME = "detailed_chunk_metadata.json" # File for rich metadata of each chunk
+CHUNK_VECTORS_FILENAME = "chunk_vectors.npy" # Optional raw dump of chunk embeddings
+VISUALIZATION_DATA_FILENAME = "visualization_plot_data.json" # Data for UMAP visualization
 
-def count_tokens_robustly(text_to_count: str) -> int:
-    text_str = str(text_to_count)
-    if TOKEN_COUNT_FALLBACK_ACTIVE or not callable(getattr(BGE_TOKENIZER_INSTANCE, 'encode', None)):
-        if callable(BGE_TOKENIZER_INSTANCE): return BGE_TOKENIZER_INSTANCE(text_str)
-        return len(text_str.split())
-    return len(BGE_TOKENIZER_INSTANCE.encode(text_str, add_special_tokens=False))
-
-def clean_text(text: str) -> str:
-    text_str = str(text) if text is not None else ""
-    text_str = re.sub(r'\s+', ' ', text_str) # Consolidate multiple whitespace
-    text_str = re.sub(r'\x00', '', text_str)  # Remove NULL bytes
-    return text_str.strip()
-
-def sanitize_filename_for_id(filename: str) -> str:
-    s = str(filename).replace(os.path.sep, "_")
-    s = re.sub(r'[^0-9a-zA-Z_.-]', '_', s)
-    s = re.sub(r'_+', '_', s)
-    s = s.strip('_-.')
-    return s if s else "unknown_file_component"
-
-# Default candidate labels for classification (can be overridden)
-DEFAULT_CLASSIFICATION_LABELS = [
+# --- Default Candidate Labels for Zero-Shot Classification ---
+# A comprehensive list, can be overridden.
+_DEFAULT_CLASSIFICATION_LABELS_FULL = [ 
     "Accounting", "Activism", "Advertising", "Aerospace Engineering", "Agriculture", "AI & Robotics",
     "Alternative Medicine", "Anatomy & Physiology", "Ancient Civilizations", "Animal Welfare", "Anthropology", "Archaeology",
     "Architecture", "Art History", "Artificial Intelligence", "Arts & Crafts", "Astronomy & Space Exploration", "Astrophysics",
@@ -131,94 +103,106 @@ DEFAULT_CLASSIFICATION_LABELS = [
     "Web Design & Development", "Wellness & Lifestyle", "Wildlife Conservation", "Wind Energy", "Women's History",
     "Women's Studies & Gender", "World Economy", "World History", "World Literature", "World Music", "World Politics",
     "World Religions", "World War I", "World War II", "Writing & Composition", "Yoga & Meditation", "Youth Studies", "Zoology",
-
-    # Essential Fallbacks
     "General Information", "Miscellaneous", "Other"
 ]
+# A shorter, more general list of classification labels.
+DEFAULT_CLASSIFICATION_LABELS_SHORT = [
+    "Technology", "Business", "Science", "Health", "Finance", "Law", "Politics", 
+    "Education", "Environment", "Culture", "Arts", "Sports","Lifestyle", 
+    "History", "Travel", "General Information", "Miscellaneous", "Other"
+]
+# By default, the system uses the shorter list for classification tasks.
+DEFAULT_CLASSIFICATION_LABELS = DEFAULT_CLASSIFICATION_LABELS_SHORT
 
 
 # --- Default Model Names and Parameters ---
-DEFAULT_PIPELINE_EMBEDDING_MODEL = "minishlab/potion-base-8M"
-DEFAULT_QUERY_EMBEDDING_MODEL = "minishlab/potion-base-8M" 
+# These specify the default machine learning models used in various pipeline stages.
+DEFAULT_PIPELINE_EMBEDDING_MODEL = "minishlab/potion-base-8M" # For generating embeddings of document chunks
+DEFAULT_QUERY_EMBEDDING_MODEL = "minishlab/potion-base-8M"   # For embedding user queries (often same as pipeline)
 
-DEFAULT_GPU_DEVICE_ID_PROCESSING = 0 
-DEFAULT_CHUNK_PROCESSING_WORKERS = max(1, os.cpu_count() // 2 if os.cpu_count() else 1)
+# --- Processing Resource Defaults ---
+_DEFAULT_GPU_DEVICE_ID_PROCESSING_STATIC = 0 # Base default before env var override
+_DEFAULT_CHUNK_PROCESSING_WORKERS_STATIC = max(1, os.cpu_count() // 2 if os.cpu_count() else 1) # Use half of CPU cores if available
 
 # --- CHUNKER CONFIGURATION DEFAULTS ---
-# CHUNKER_DEFAULTS['chunker_type_name']['param_name']
-# Chonkie chunkers often use 'tokenizer_or_token_counter' or 'embedding_model'
-# We'll use our robust BGE tokenizer for token counting where needed by Chonkie basic chunkers
-# and specify embedding models for semantic/SDPM/Neural where Chonkie uses them internally.
-
+# This dictionary stores default parameters for each supported Chonkie chunker type.
+# Keys within each chunker's dict aim to match the parameter names expected by the Chonkie library's constructors.
+# The pipeline_orchestrator maps CLI/API arguments to these internal names.
 CHUNKER_DEFAULTS = {
-    "semchunk": { # Current basic/rule-based option
-        "max_tokens_chunk": 256, "overlap_percent": 15,
+    "chonkie_token": { 
+        "tokenizer": "gpt2", # Chonkie's TokenChunker expects 'tokenizer' (e.g., a model name or path)
+        "chunk_size": 256,   # Target number of tokens per chunk
+        "chunk_overlap": 0.0,# Overlap as a fraction (0.0-1.0) or integer number of tokens. Chonkie expects float for percentage.
     },
-    "chonkie_token": { # Chonkie's basic token chunker
-        "tokenizer": "gpt2", # Chonkie's TokenChunker takes a tokenizer string or instance
-        "chunk_size": 256, "chunk_overlap": 0, # Can be int or float (percentage)
+    "chonkie_sentence": { 
+        "tokenizer_or_token_counter": "gpt2", # Can be a tokenizer name or a custom token counting function
+        "chunk_size": 256,                # Target token size for merged sentences
+        "chunk_overlap": 0.0,             # Overlap for sentence chunks
+        "min_sentences_per_chunk": 1,     # Minimum number of sentences to form a chunk
+        "min_characters_per_sentence": 12,# Minimum characters for a string to be considered a sentence
     },
-    "chonkie_sentence": { # Chonkie's sentence chunker
-        "tokenizer_or_token_counter": "gpt2", # Uses Chonkie's Tokenizer wrapper
-        "chunk_size": 256, "chunk_overlap": 0, "min_sentences_per_chunk": 1,
-        "min_characters_per_sentence": 12,
+    "chonkie_recursive": { 
+        # For RecursiveChunker, 'tokenizer_or_token_counter' is used if rules are token-based or for length estimations.
+        # If rules are purely separator-based, it might not be strictly needed by Chonkie itself but good for consistency.
+        "tokenizer_or_token_counter": "ragdoll_utils.BGE_TOKENIZER_INSTANCE", # Placeholder for our utility function
+        "chunk_size": 256,                # Target chunk size for recursively split text
+        "min_characters_per_chunk": 24,   # Minimum characters for a resulting chunk
+        # 'rules' can be set to "markdown" in the orchestrator if DOCX/EPUB converted to MD.
+        # Chonkie's RecursiveChunker.from_recipe("markdown", lang="en") is a way to get MD rules.
+        "rules": None,                    # Default to Chonkie's internal general separators if not specified (e.g. for plain text)
+        "lang": "en",                     # Language for language-specific rules (e.g. markdown sentence splitting)
     },
-    "chonkie_recursive": { # Chonkie's recursive chunker
-        "tokenizer_or_token_counter": "gpt2", # Uses Chonkie's Tokenizer wrapper
-        "chunk_size": 256, "min_characters_per_chunk": 24,
-        # 'rules' typically uses Chonkie's RecursiveRules() default or from_recipe
+    "chonkie_sdpm": { # Semantic Density Peak Maximization Chunker
+        "embedding_model": "minishlab/potion-base-8M", # Embedding model for semantic calculations
+        "chunk_size": 256,                # Target token count for the final chunks (uses its internal tokenizer)
+        "threshold": "auto",              # Similarity threshold for segmentation (float, int percentile, or "auto")
+        "similarity_window": 1,           # Window size for comparing sentence similarities
+        "min_sentences": 2,               # Minimum number of sentences in a potential semantic segment
+        "skip_window": 5,                 # Window for skipping sentences during peak finding
+        "mode": "window",                 # Mode for similarity calculation ("cumulative" or "window")
+        "min_chunk_size": 20,             # Minimum token count for a final chunk (Chonkie's internal tokenizer)
+        "min_characters_per_sentence": 12,# For initial sentence splitting before semantic analysis
+        "tokenizer_or_token_counter": "gpt2", # For internal token counting by SDPM if needed
+        # "device" for the internal embedding model is forced to 'cpu' in the worker process
     },
-    "chonkie_sdpm": {
-        "embedding_model": "minishlab/potion-base-8M", # For Chonkie's internal sentence similarity
-        "chunk_size": 256,    # Target token count for final chunks (using its tokenizer)
-        "threshold": "auto",  # Similarity threshold: float (0-1), int (1-100 percentile), or "auto"
-        "similarity_window": 1, 
-        "min_sentences": 2,
-        "skip_window": 5,
-        "mode": "window",     # "cumulative" or "window"
-        "min_chunk_size": 20, # Min tokens per chunk
-        "min_characters_per_sentence": 12,
-    },
-    "chonkie_semantic": { 
+    "chonkie_semantic": { # General Semantic Chunker
         "embedding_model": "minishlab/potion-base-8M",
-        "chunk_size": 256,
+        "chunk_size": 256, 
         "threshold": 0.3, 
         "min_sentences": 2,
         "mode": "window",
         "similarity_window": 1,
         "min_chunk_size": 20,
         "min_characters_per_sentence": 12,
+        "tokenizer_or_token_counter": "gpt2",
+        # "device" for the internal embedding model is forced to 'cpu' in the worker process
     },
-    "chonkie_neural": {
-        "model": "mirth/chonky_distilbert_base_uncased_1", # Segmentation model
-        "tokenizer": "mirth/chonky_distilbert_base_uncased_1", # Tokenizer for this specific model
-        "stride": 128, 
-        "min_characters_per_chunk": 30,
-        # device_map for NeuralChunker handled by gpu_device_id in pipeline
+    "chonkie_neural": { # Neural Network based Chunker
+        "model": "mirth/chonky_distilbert_base_uncased_1", # Pre-trained segmentation model
+        "tokenizer": "mirth/chonky_distilbert_base_uncased_1", # Tokenizer corresponding to the segmentation model
+        "stride": 128,                    # Stride for model inference over long texts
+        "min_characters_per_chunk": 30,   # Minimum character length for a chunk
+        # "device_map" for the NeuralChunker is handled in data_processing_core for worker processes (usually 'cpu')
     }
 }
-DEFAULT_CHUNKER_TYPE = "chonkie_sdpm"
+# Default chunker type to be used if not specified by the user.
+DEFAULT_CHUNKER_TYPE = "chonkie_sdpm" 
 
-# Classification
-DEFAULT_CLASSIFIER_MODEL = "MoritzLaurer/deberta-v3-large-zeroshot-v1.1-all-33"
-DEFAULT_CLASSIFICATION_LABELS = [
-    "Technology", "Business", "Science", "Health", "Finance", "Law", "Politics", 
-    "Education", "Environment", "Culture", "Arts", "Sports","Lifestyle", 
-    "History", "Travel", "General Information", "Miscellaneous", "Other"
-]
-DEFAULT_CLASSIFICATION_BATCH_SIZE = 16
+# --- Classification Defaults ---
+DEFAULT_CLASSIFIER_MODEL = "MoritzLaurer/deberta-v3-large-zeroshot-v1.1-all-33" # Zero-shot model
+DEFAULT_CLASSIFICATION_BATCH_SIZE = 16 # Batch size for classifying chunks
 
-# Reranking & RAG
-DEFAULT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-DEFAULT_RERANKER_TOP_N = 7 
-DEFAULT_RERANKER_BATCH_SIZE = 32 
-DEFAULT_RAG_INITIAL_K = 30 # Increased for better context window usage
-DEFAULT_RAG_MAX_CONTEXT_TOKENS = 6800 
+# --- Reranking and RAG Defaults ---
+DEFAULT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2" # Cross-encoder for reranking
+DEFAULT_RERANKER_TOP_N = 7                # Number of chunks to return after reranking
+DEFAULT_RERANKER_BATCH_SIZE = 32          # Batch size for reranker model
+DEFAULT_RAG_INITIAL_K = 30                # Initial number of chunks to retrieve for RAG
+DEFAULT_RAG_MAX_CONTEXT_TOKENS = 6800     # Max tokens for LLM context window (estimated)
 
-# LLM
-DEFAULT_LLM_API_URL = "http://localhost:8080/v1/chat/completions" 
-DEFAULT_LLM_MAX_GENERATION_TOKENS = 1536 
-DEFAULT_LLM_TEMPERATURE = 0.5 
+# --- LLM Interaction Defaults ---
+_DEFAULT_LLM_API_URL_STATIC = "http://localhost:8080/v1/chat/completions" # Base default before env var
+DEFAULT_LLM_MAX_GENERATION_TOKENS = 1536  # Max tokens the LLM should generate
+DEFAULT_LLM_TEMPERATURE = 0.5             # LLM temperature for generation
 DEFAULT_SYSTEM_PROMPT_RAG = """You are a helpful AI assistant. Answer the user's question based ONLY on the provided context.
 Your answer must be grounded in the information from the context.
 If the context does not contain enough information to answer the question, state that and do not attempt to answer.
@@ -241,10 +225,60 @@ Retrieved Context:
 ---
 
 Exploration Insights:"""
-DEFAULT_EXPLORE_MAX_CHUNKS_TO_SUMMARIZE = 7 
-DEFAULT_EXPLORE_LLM_SUMMARY_MAX_TOKENS = 768 
-DEFAULT_EXPLORE_LLM_SUMMARY_TEMPERATURE = 0.4 
+DEFAULT_EXPLORE_MAX_CHUNKS_TO_SUMMARIZE = 7 # Max chunks to feed LLM for explore mode
+DEFAULT_EXPLORE_LLM_SUMMARY_MAX_TOKENS = 768 # Max tokens for LLM's explore summary
+DEFAULT_EXPLORE_LLM_SUMMARY_TEMPERATURE = 0.4 # Temperature for LLM explore summary
 
-# UMAP & Service
-DEFAULT_UMAP_NEIGHBORS = 15; DEFAULT_UMAP_MIN_DIST = 0.1; DEFAULT_UMAP_METRIC = "cosine"
-DEFAULT_DATA_SERVICE_URL = "http://localhost:8001"
+# --- UMAP & Service Defaults ---
+DEFAULT_UMAP_NEIGHBORS = 15
+DEFAULT_UMAP_MIN_DIST = 0.1
+DEFAULT_UMAP_METRIC = "cosine"
+_DEFAULT_DATA_SERVICE_URL_STATIC = "http://localhost:8001" # Base default before env var
+
+# --- Environment Variable Handling for Overriding Defaults ---
+# This section allows configuration values to be overridden by environment variables.
+ENV_VAR_PREFIX = "RAGDOLL_" # Prefix for all RAGdoll specific environment variables
+
+ENV_GPU_DEVICE_ID = f"{ENV_VAR_PREFIX}GPU_DEVICE_ID"
+ENV_LLM_API_URL = f"{ENV_VAR_PREFIX}LLM_API_URL"
+ENV_DATA_SERVICE_URL = f"{ENV_VAR_PREFIX}DATA_SERVICE_URL"
+ENV_HF_HUB_OFFLINE = f"{ENV_VAR_PREFIX}HF_HUB_OFFLINE" # For HuggingFace Hub offline mode
+ENV_TRANSFORMERS_OFFLINE = "TRANSFORMERS_OFFLINE" # Standard HF var
+ENV_LOG_LEVEL = f"{ENV_VAR_PREFIX}LOG_LEVEL" # For configuring application log level
+
+def get_env_var_as_int(var_name: str, default: int) -> int:
+    """Safely retrieves an environment variable and casts it to an integer."""
+    try: 
+        return int(os.environ.get(var_name, str(default)))
+    except ValueError: 
+        print(f"[Config Warning] Invalid integer value for env var {var_name}. Using default: {default}")
+        return default
+
+def get_env_var_as_bool(var_name: str, default: bool) -> bool:
+    """Safely retrieves an environment variable and casts it to a boolean."""
+    val = os.environ.get(var_name, str(default)).lower()
+    return val in ['true', '1', 't', 'y', 'yes']
+
+# Override defaults with environment variables if set
+DEFAULT_GPU_DEVICE_ID_PROCESSING = get_env_var_as_int(ENV_GPU_DEVICE_ID, _DEFAULT_GPU_DEVICE_ID_PROCESSING_STATIC)
+DEFAULT_CHUNK_PROCESSING_WORKERS = max(1, os.cpu_count() // 2 if os.cpu_count() else 1) # This is usually system-dependent
+
+DEFAULT_LLM_API_URL = os.environ.get(ENV_LLM_API_URL, _DEFAULT_LLM_API_URL_STATIC)
+DEFAULT_DATA_SERVICE_URL = os.environ.get(ENV_DATA_SERVICE_URL, _DEFAULT_DATA_SERVICE_URL_STATIC)
+
+HF_HUB_OFFLINE_RAGDOLL = get_env_var_as_bool(ENV_HF_HUB_OFFLINE, False) 
+HF_HUB_OFFLINE_TRANSFORMERS = get_env_var_as_bool(ENV_TRANSFORMERS_OFFLINE, False)
+# If either is set, enforce offline mode for Hugging Face libraries
+ACTUAL_HF_OFFLINE_MODE = HF_HUB_OFFLINE_RAGDOLL or HF_HUB_OFFLINE_TRANSFORMERS
+
+DEFAULT_LOG_LEVEL = os.environ.get(ENV_LOG_LEVEL, "INFO").upper()
+
+if ACTUAL_HF_OFFLINE_MODE:
+    os.environ["TRANSFORMERS_OFFLINE"] = "1" 
+    os.environ["HF_HUB_OFFLINE"] = "1"       
+    print("[Config] HuggingFace Hub and Transformers set to OFFLINE mode based on environment variable(s).")
+
+print(f"[Config] Log level configured to: {DEFAULT_LOG_LEVEL}")
+print(f"[Config] Default GPU Device ID for processing: {DEFAULT_GPU_DEVICE_ID_PROCESSING}")
+print(f"[Config] Default LLM API URL: {DEFAULT_LLM_API_URL}")
+print(f"[Config] Default Data Service URL: {DEFAULT_DATA_SERVICE_URL}")
