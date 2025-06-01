@@ -159,7 +159,7 @@ CHUNKER_DEFAULTS = {
         "threshold": "auto",              # Similarity threshold for segmentation (float, int percentile, or "auto")
         "similarity_window": 1,           # Window size for comparing sentence similarities
         "min_sentences": 2,               # Minimum number of sentences in a potential semantic segment
-        "skip_window": 5,                 # Window for skipping sentences during peak finding
+        "skip_window": 3,                 # Window for skipping sentences during peak finding
         "mode": "window",                 # Mode for similarity calculation ("cumulative" or "window")
         "min_chunk_size": 20,             # Minimum token count for a final chunk (Chonkie's internal tokenizer)
         "min_characters_per_sentence": 12,# For initial sentence splitting before semantic analysis
