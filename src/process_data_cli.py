@@ -5,8 +5,8 @@ import argparse # For parsing command-line arguments
 import os       # For os.path related checks if any (though mostly handled by orchestrator)
 
 # Project-specific imports
-from ragdoll import ragdoll_config # Default configurations
-from ragdoll import pipeline_orchestrator # The main pipeline execution logic
+from . import ragdoll_config # Default configurations
+from . import pipeline_orchestrator # The main pipeline execution logic
 
 def main_cli():
     """
@@ -21,7 +21,7 @@ def main_cli():
     # --- General Pipeline Settings ---
     # Arguments related to file paths, processing behavior, and resources.
     pg_general = parser.add_argument_group('General Pipeline Settings')
-    pg_general.add_argument("--docs-folder", type=str, default="docs_input",
+    pg_general.add_argument("--docs-folder", type=str, default=ragdoll_config.DEFAULT_SOURCE_DOCS_DIR,
                             help="Path to the folder containing source documents to process.")
     pg_general.add_argument("--vector-data-dir", type=str, default="vector_store_data",
                             help="Directory where processed data and the vector store will be saved.")

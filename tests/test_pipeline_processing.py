@@ -75,7 +75,6 @@ def test_pipeline_default_chonkie_sdpm(temp_docs_dir, temp_output_dir):
         "chonkie_embedding_model": ragdoll_config.CHUNKER_DEFAULTS["chonkie_sdpm"]["embedding_model"],
         "chonkie_target_chunk_size": ragdoll_config.CHUNKER_DEFAULTS["chonkie_sdpm"]["chunk_size"],
         "chonkie_similarity_threshold": ragdoll_config.CHUNKER_DEFAULTS["chonkie_sdpm"]["threshold"],
-        # ... ensure all required params for _get_specific_chunker_params are here or in defaults
     }
     
     success = pipeline_orchestrator.run_full_processing_pipeline(pipeline_config)
@@ -134,6 +133,8 @@ def test_pipeline_chonkie_recursive_markdown(temp_docs_dir, temp_output_dir):
         "verbose": True, # Enable verbose for more test output
         "embedding_model_name": "sentence-transformers/all-MiniLM-L6-v2", # A known fast SBERT model
         "chunker_type": "chonkie_recursive",
+        "chonkie_recursive_rules_recipe": "markdown", # Signal to use markdown rules
+        "chonkie_recursive_lang": "en",             # Specify language for markdown rules
         # For chonkie_recursive, specify a markdown ruleset if content is expected to be markdown
         "chonkie_basic_tokenizer": "ragdoll_utils.BGE_TOKENIZER_INSTANCE", # Use our tokenizer
         "chonkie_basic_chunk_size": 128, # Smaller chunk size for testing

@@ -73,6 +73,10 @@ def _get_specific_chunker_params(selected_chunker_type: str, global_pipeline_con
             "chunk_size": global_pipeline_config.get("chonkie_basic_chunk_size", chunker_defaults_from_config.get("chunk_size")),
             "min_characters_per_chunk": global_pipeline_config.get("chonkie_basic_min_chars", chunker_defaults_from_config.get("min_characters_per_chunk")),
         }
+        if "chonkie_recursive_rules_recipe" in global_pipeline_config: # e.g., a new CLI arg --chonkie-recursive-rules-recipe markdown
+            chonkie_native_params["rules"] = global_pipeline_config["chonkie_recursive_rules_recipe"] # Pass "markdown" as string
+            if "chonkie_recursive_lang" in global_pipeline_config: # e.g. --chonkie-recursive-lang en
+                chonkie_native_params["lang"] = global_pipeline_config["chonkie_recursive_lang"]
     elif selected_chunker_type == "chonkie_sentence":
         chonkie_native_params = {
             "tokenizer_or_token_counter": global_pipeline_config.get("chonkie_basic_tokenizer", chunker_defaults_from_config.get("tokenizer_or_token_counter")),

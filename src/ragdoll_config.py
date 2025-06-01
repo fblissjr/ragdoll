@@ -5,6 +5,8 @@
 import os # For os.path, os.cpu_count, and environment variable access
 
 # --- Shared File Path Constants for Data Storage ---
+DEFAULT_SOURCE_DOCS_DIR = "data"
+
 # These define filenames used when saving processed data.
 VECTOR_STORE_SUBDIR_NAME = "vicinity_store" # Subdirectory within the main data_dir for Vicinity store
 TEXT_CHUNKS_FILENAME = "text_chunks.json"   # File storing all extracted text chunks
