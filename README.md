@@ -1,6 +1,9 @@
 # RAGdoll: Experimenting with RAG Again
+<p align="left">
+  <img src="assets/ragdoll_banner.jpg" width="400" alt="ragdoll banner" />
+</p>
 
-trying to see if rag works better with a more creative interface, static embedding models, better chunking, data modeling, and other experimental stuff.
+experimental rag and data processing system to see if rag works better with better data modeling, more creative interface, static embedding models, better chunking, data modeling, and other experimental stuff.
 
 the system features a modular Python backend service, exposed via FastAPI - cient interactions are available via a big and lofty Python CLI, with a modern interactive frontend potentially coming.
 
@@ -22,47 +25,6 @@ the LLM component is designed to interface with any external OpenAI-compatible A
 * **Optional Zero-Shot Classification:** Classify chunks into predefined categories during processing.
 * **UMAP Visualization:** Generate 2D projections of chunk embeddings for visual exploration.
 * **Tokenlearn Integration (Workflow):** Guidance and helper targets for using [Tokenlearn](https://github.com/MinishLab/tokenlearn) to train/fine-tune custom `StaticModel` (Model2Vec) instances for improved embedding quality and domain adaptation.
-
-## Project Structure
-
-```
-
-ragdoll/
-├── data/                     # Example directory for source documents for processing
-├── custom_models/            # Example directory for custom trained models (e.g., from Tokenlearn)
-├── vector_store_output/      # Example directory for pipeline output
-├── docs/
-│   └── tokenlearn_usage.md   # Guide for using Tokenlearn with RAGdoll
-├── LICENSE
-├── Makefile                  # Main Makefile for development and common tasks
-├── pyproject.toml            # Project metadata and dependencies (for Hatch build system)
-├── requirements.txt          # pip freeze output / alternative dependency list
-├── src/                      # Main source code for RAGdoll
-│   ├── **init**.py
-│   ├── api_models.py         # Pydantic models for API
-│   ├── api_routers/          # FastAPI routers for different endpoint groups
-│   ├── core_logic/           # Core data processing sub-modules (parsing, classification)
-│   ├── utils/                # General utility sub-modules (visualization)
-│   ├── data_processing_core.py # Orchestrates document prep and chunking
-│   ├── data_service_client.py  # Client for RAGdoll API service
-│   ├── embedding_module.py   # Handles embedding model loading and generation
-│   ├── llm_interface.py      # Client for external LLM services
-│   ├── main_api.py           # Main FastAPI application
-│   ├── pipeline_orchestrator.py # Orchestrates the full data processing pipeline
-│   ├── process_data_cli.py   # CLI for `ragdoll-process` script
-│   ├── rag_cli.py            # CLI for `ragdoll-cli` script
-│   ├── rag_core.py           # Client-side RAG logic (context, citations)
-│   ├── ragdoll_config.py     # Default configurations and constants
-│   ├── ragdoll_utils.py      # Common utility functions
-│   ├── reranker_module.py    # Reranking logic
-│   └── vector_store_manager.py # Manages Vicinity vector store
-└── tests/                    # Automated tests
-    ├── **init**.py
-    ├── conftest.py
-    ├── sample_files/         # Sample DOCX, PDF, etc. for testing
-    └── test_pipeline_processing.py
-
-```
 
 ## Installation & Setup
 

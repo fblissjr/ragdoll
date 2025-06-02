@@ -132,41 +132,37 @@ _DEFAULT_CHUNK_PROCESSING_WORKERS_STATIC = max(1, os.cpu_count() // 2 if os.cpu_
 # The pipeline_orchestrator maps CLI/API arguments to these internal names.
 CHUNKER_DEFAULTS = {
     "chonkie_token": { 
-        "tokenizer": "gpt2", # Chonkie's TokenChunker expects 'tokenizer' (e.g., a model name or path)
-        "chunk_size": 256,   # Target number of tokens per chunk
-        "chunk_overlap": 0.0,# Overlap as a fraction (0.0-1.0) or integer number of tokens. Chonkie expects float for percentage.
+        "tokenizer": "gpt2", 
+        "chunk_size": 256,   
+        "chunk_overlap": 0.0,
     },
     "chonkie_sentence": { 
-        "tokenizer_or_token_counter": "gpt2", # Can be a tokenizer name or a custom token counting function
-        "chunk_size": 256,                # Target token size for merged sentences
-        "chunk_overlap": 0.0,             # Overlap for sentence chunks
-        "min_sentences_per_chunk": 1,     # Minimum number of sentences to form a chunk
-        "min_characters_per_sentence": 12,# Minimum characters for a string to be considered a sentence
+        "tokenizer_or_token_counter": "ragdoll_utils.BGE_TOKENIZER_INSTANCE", # String placeholder
+        "chunk_size": 256,                
+        "chunk_overlap": 0.0,             
+        "min_sentences_per_chunk": 1,     
+        "min_characters_per_sentence": 12,
     },
     "chonkie_recursive": { 
-        # For RecursiveChunker, 'tokenizer_or_token_counter' is used if rules are token-based or for length estimations.
-        # If rules are purely separator-based, it might not be strictly needed by Chonkie itself but good for consistency.
-        "tokenizer_or_token_counter": "ragdoll_utils.BGE_TOKENIZER_INSTANCE", # Placeholder for our utility function
-        "chunk_size": 256,                # Target chunk size for recursively split text
-        "min_characters_per_chunk": 24,   # Minimum characters for a resulting chunk
-        # 'rules' can be set to "markdown" in the orchestrator if DOCX/EPUB converted to MD.
-        # Chonkie's RecursiveChunker.from_recipe("markdown", lang="en") is a way to get MD rules.
-        "rules": None,                    # Default to Chonkie's internal general separators if not specified (e.g. for plain text)
+        "tokenizer_or_token_counter": "ragdoll_utils.BGE_TOKENIZER_INSTANCE", # String placeholder
+        "chunk_size": 256,                
+        "min_characters_per_chunk": 24,   
+        "rules": None, # Default to Chonkie's internal general separators. Can be "markdown" string or RecursiveRules object.
+        # "lang": "en", # Removed as it's usually a parameter to rules.from_recipe, not RecursiveChunker.__init__
     },
-    "chonkie_sdpm": { # Semantic Density Peak Maximization Chunker
-        "embedding_model": "minishlab/potion-base-8M", # Embedding model for semantic calculations
-        "chunk_size": 256,                # Target token count for the final chunks (uses its internal tokenizer)
-        "threshold": "auto",              # Similarity threshold for segmentation (float, int percentile, or "auto")
-        "similarity_window": 1,           # Window size for comparing sentence similarities
-        "min_sentences": 2,               # Minimum number of sentences in a potential semantic segment
-        "skip_window": 3,                 # Window for skipping sentences during peak finding
-        "mode": "window",                 # Mode for similarity calculation ("cumulative" or "window")
-        "min_chunk_size": 20,             # Minimum token count for a final chunk (Chonkie's internal tokenizer)
-        "min_characters_per_sentence": 12,# For initial sentence splitting before semantic analysis
-        "tokenizer_or_token_counter": "gpt2", # For internal token counting by SDPM if needed
-        # "device" for the internal embedding model is forced to 'cpu' in the worker process
+    "chonkie_sdpm": { 
+        "embedding_model": "minishlab/potion-base-8M", 
+        "chunk_size": 256,                
+        "threshold": "auto",              
+        "similarity_window": 1,           
+        "min_sentences": 2,               
+        "skip_window": 5,                 
+        "mode": "window",                 
+        "min_chunk_size": 20,             
+        "min_characters_per_sentence": 12,
+        # "tokenizer_or_token_counter" removed, not directly used by SDPMChunker constructor
     },
-    "chonkie_semantic": { # General Semantic Chunker
+    "chonkie_semantic": { 
         "embedding_model": "minishlab/potion-base-8M",
         "chunk_size": 256, 
         "threshold": 0.3, 
@@ -175,15 +171,13 @@ CHUNKER_DEFAULTS = {
         "similarity_window": 1,
         "min_chunk_size": 20,
         "min_characters_per_sentence": 12,
-        "tokenizer_or_token_counter": "gpt2",
-        # "device" for the internal embedding model is forced to 'cpu' in the worker process
+        # "tokenizer_or_token_counter" removed
     },
-    "chonkie_neural": { # Neural Network based Chunker
-        "model": "mirth/chonky_distilbert_base_uncased_1", # Pre-trained segmentation model
-        "tokenizer": "mirth/chonky_distilbert_base_uncased_1", # Tokenizer corresponding to the segmentation model
-        "stride": 128,                    # Stride for model inference over long texts
-        "min_characters_per_chunk": 30,   # Minimum character length for a chunk
-        # "device_map" for the NeuralChunker is handled in data_processing_core for worker processes (usually 'cpu')
+    "chonkie_neural": { 
+        "model": "mirth/chonky_distilbert_base_uncased_1", 
+        "tokenizer": "mirth/chonky_distilbert_base_uncased_1", 
+        "stride": 128,                    
+        "min_characters_per_chunk": 30,   
     }
 }
 # Default chunker type to be used if not specified by the user.
