@@ -42,6 +42,8 @@ dependencies = [
     "umap-learn>=0.5",              # For visualization
     "scikit-learn>=1.0",            # For PCA (if used by Tokenlearn/embedding) and other ML utils
     "tqdm>=4.60",                   # Progress bars
+    "magika>0.5.0",                 # Detecting file types
+    "datasets"                      # HF datasets for classification batching
     # "tokenlearn>=0.2.0",          # Optional: if you want to bundle running tokenlearn via RAGdoll's makefile easily
 ]
 

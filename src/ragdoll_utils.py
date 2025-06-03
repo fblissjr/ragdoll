@@ -4,7 +4,7 @@
 
 import os
 import re
-from typing import Dict, Any # For type hinting
+from typing import Dict, Any, Optional
 
 # Attempt to import transformers and set up tokenizer
 # This is a core utility, so its initialization happens on module import.
@@ -57,41 +57,54 @@ def sanitize_filename_for_id(filename: str) -> str:
     s = s.strip('_-.') # Remove leading/trailing underscores, dots, or hyphens
     return s if s else "unknown_file_component" # Return a default if the string becomes empty
 
-def generate_display_source_name(metadata: Dict[str, Any], chunk_order_in_doc_part: int) -> str:
+def generate_display_source_name(metadata: Dict[str, Any], chunk_index: Optional[int] = None) -> str:
     """
-    Generates a human-readable display name for a chunk based on its metadata.
-    This helps users identify the origin of a chunk in UI or logs.
-    chunk_order_in_doc_part is assumed to be 0-indexed from processing.
+    Generates a user-friendly display name for a chunk based on its metadata.
+    Example: "MyDocument.pdf (Page 3, Chunk 2)"
     """
     source_file = metadata.get("source_file", "UnknownSource")
-    # Use the base name of the file to keep it concise
-    base_name = os.path.basename(source_file) 
+    base_name = os.path.basename(source_file)
     
-    parts = [base_name] # Start with the filename
+    name_parts = [base_name]
     
-    # Add specific location identifiers from metadata if available
-    if "sheet_name" in metadata:
-        parts.append(f"Sht:{metadata['sheet_name']}")
-    if "page_number" in metadata:
-        parts.append(f"Pg:{metadata['page_number']}")
-    if "row_index" in metadata: # Assuming 0-indexed from internal processing
-        parts.append(f"Rw:{metadata['row_index'] + 1}") 
-    if "line_number" in metadata: # For JSONL or similar line-based formats
-        parts.append(f"Ln:{metadata['line_number']}")
-    if "json_path" in metadata:
-        jp = metadata['json_path']
-        # Shorten very long JSON paths for display
-        jp_display = jp if len(jp) < 25 else f"...{jp[-22:]}" 
-        parts.append(f"Path:{jp_display}")
-    if "epub_item_name" in metadata: # For EPUB chapters/sections
-         parts.append(f"Item:{metadata['epub_item_name']}")
+    # Add page number if available
+    if "page_number" in metadata and metadata["page_number"] is not None:
+        name_parts.append(f"P:{metadata['page_number']}")
     
-    # Add the chunk index (1-based for display)
-    # 'chunk_order_in_doc_part' is preferred if available, otherwise use general 'chunk_index'
-    actual_chunk_idx = metadata.get('chunk_order_in_doc_part', chunk_order_in_doc_part)
-    parts.append(f"Chk:{actual_chunk_idx + 1}") 
+    # Add sheet name if available (for Excel files)
+    if "sheet_name" in metadata and metadata["sheet_name"] is not None:
+        name_parts.append(f"Sht:{metadata['sheet_name'][:15]}") # Truncate long sheet names
+        
+    # Add row index if available (for tabular data)
+    if "row_index" in metadata and metadata["row_index"] is not None:
+        name_parts.append(f"Row:{metadata['row_index'] + 1}") # 1-based for display
 
-    return " | ".join(parts) # Join all parts with a separator
+    # Add line number if available (for JSONL or line-based text)
+    if "line_number" in metadata and metadata["line_number"] is not None:
+        name_parts.append(f"L:{metadata['line_number']}")
+        
+    # Add JSON path if available
+    if "json_path" in metadata and metadata["json_path"] is not None:
+        path_suffix = metadata["json_path"]
+        if len(path_suffix) > 20: # Truncate long JSON paths
+            path_suffix = "..." + path_suffix[-17:]
+        name_parts.append(f"Path:{path_suffix}")
+
+    # Add EPUB item name if available
+    if "epub_item_name" in metadata and metadata["epub_item_name"] is not None:
+        epub_name_suffix = metadata["epub_item_name"]
+        if len(epub_name_suffix) > 20:
+            epub_name_suffix = epub_name_suffix[:17] + "..."
+        name_parts.append(f"Epub:{epub_name_suffix}")
+        
+    # Add the chunk index within its document part if provided
+    if chunk_index is not None:
+        name_parts.append(f"Chk:{chunk_index + 1}") # Display as 1-based index
+
+    if len(name_parts) > 1:
+        return f"{name_parts[0]} ({', '.join(name_parts[1:])})"
+    else:
+        return name_parts[0]
 
 # Final check for BGE Tokenizer status after all imports within this module (if any affected it)
 if BGE_TOKENIZER_INSTANCE is None and not TOKEN_COUNT_FALLBACK_ACTIVE:

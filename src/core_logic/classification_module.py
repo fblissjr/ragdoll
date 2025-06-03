@@ -1,103 +1,157 @@
 # src/core_logic/classification_module.py
-# This module handles the zero-shot classification of text chunks.
-
 import torch
-from tqdm import tqdm
-from typing import List, Dict, Optional, Any
+from tqdm import tqdm # Ensure tqdm is imported
+from typing import List, Dict, Any, Optional, Iterator
+from transformers import pipeline as hf_pipeline, Pipeline 
+from datasets import Dataset # Keep this import if you want to try it later
 
-# Third-party library for Hugging Face pipelines
-from transformers import pipeline as hf_pipeline 
-from transformers.pipelines.base import Pipeline as HFPipeline # For type hinting
-
-# Project-specific config for default labels
+# RAGdoll project-specific imports (if any are needed for defaults)
 from .. import ragdoll_config 
 
-
-def initialize_classifier(model_name: str, device_id: int = -1) -> Optional[HFPipeline]: 
+def initialize_classifier(
+    model_name_or_path: str, 
+    device_id: int = -1, 
+    task: str = "zero-shot-classification",
+    # This batch_size is passed to the hf_pipeline constructor.
+    # It tells the pipeline how to configure its internal DataLoader.
+    batch_size_for_pipeline_init: int = ragdoll_config.DEFAULT_CLASSIFICATION_BATCH_SIZE 
+) -> Optional[Pipeline]:
     """
     Initializes and returns a Hugging Face zero-shot classification pipeline.
-    Manages device placement (CPU, CUDA, MPS for Apple Silicon).
+    The pipeline is configured with the specified batch_size_for_pipeline_init.
     """
-    try: 
-        effective_device_idx: Union[int, str] = -1 # Default to CPU
-        
-        if device_id >= 0: # If a specific GPU device ID is requested
+    try:
+        effective_device = -1 
+        if device_id >= 0:
             if torch.cuda.is_available():
-                effective_device_idx = device_id 
-                print(f"Classification Module: Initializing Classifier '{model_name}' on CUDA device: cuda:{effective_device_idx}")
-            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available(): # Check for Apple Silicon MPS
-                effective_device_idx = "mps" # Use string "mps" for pipeline's device argument
-                print(f"Classification Module: Initializing Classifier '{model_name}' on MPS device.")
-            else: # Requested GPU not available, fallback to CPU
-                cpu_reason = f"Selected GPU device_id {device_id} not available"
-                print(f"Classification Module: {cpu_reason}. Initializing Classifier '{model_name}' on CPU.")
-        else: # Explicitly selected CPU (device_id < 0)
-            print(f"Classification Module: Initializing Classifier '{model_name}' on CPU (device_id: {device_id}).")
+                effective_device = device_id 
+                print(f"Classification Module: Attempting to use CUDA device: cuda:{effective_device}")
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available() and torch.backends.mps.is_built():
+                effective_device = "mps" 
+                print(f"Classification Module: Attempting to use MPS device (Apple Silicon).")
+            else:
+                print(f"Classification Module: GPU device_id {device_id} requested, but CUDA/MPS not available. Using CPU.")
+        else:
+            print(f"Classification Module: Using CPU for classifier.")
             
-        # Load the zero-shot-classification pipeline from Hugging Face.
-        classifier = hf_pipeline(
-            task="zero-shot-classification", 
-            model=model_name, 
-            device=effective_device_idx # Pass the determined device index or string
+        print(f"Classification Module: Initializing Classifier '{model_name_or_path}' on device: {effective_device} with pipeline init batch_size: {batch_size_for_pipeline_init}")
+        
+        classifier_pipeline = hf_pipeline(
+            task=task, 
+            model=model_name_or_path, 
+            device=effective_device,
+            batch_size=batch_size_for_pipeline_init # Pass batch_size during pipeline initialization
         )
-        print(f"Classification Module: Classifier '{model_name}' loaded successfully on device: {classifier.device}.")
-        return classifier
-    except Exception as e_clf: # Catch any error during model loading or pipeline creation
-        print(f"Classification Module Error: Failed to initialize classifier '{model_name}': {e_clf}. Classification will be skipped.")
+        
+        actual_pipeline_device = "unknown"
+        if hasattr(classifier_pipeline, 'model') and hasattr(classifier_pipeline.model, 'device'):
+            actual_pipeline_device = str(classifier_pipeline.model.device)
+        elif hasattr(classifier_pipeline, 'device'):
+             actual_pipeline_device = str(classifier_pipeline.device)
+
+        # We print the batch_size it was initialized with for confirmation.
+        # The actual attribute name might vary or not be public.
+        init_bs_msg = f"Pipeline configured init batch_size: {batch_size_for_pipeline_init}"
+        if hasattr(classifier_pipeline, 'batch_size') and classifier_pipeline.batch_size is not None:
+            init_bs_msg = f"Pipeline public batch_size attribute: {classifier_pipeline.batch_size}"
+        elif hasattr(classifier_pipeline, '_batch_size') and classifier_pipeline._batch_size is not None: # Check private common name
+             init_bs_msg = f"Pipeline internal _batch_size attribute: {classifier_pipeline._batch_size}"
+
+
+        print(f"Classification Module: Classifier '{model_name_or_path}' loaded. "
+              f"Effective model device: {actual_pipeline_device}. {init_bs_msg}")
+        return classifier_pipeline
+    except Exception as e_classifier_init:
+        print(f"Classification Module Error: Failed to initialize classifier '{model_name_or_path}': {e_classifier_init}")
         return None
 
 def classify_chunks_batch(
-    chunks_to_classify: list[str], 
-    classifier_pipeline: HFPipeline, 
-    candidate_labels: list[str], 
-    classification_batch_size: int, 
-    progress_desc: str = "Classifying Chunks"
-) -> list[Optional[dict]]: 
+    chunks_to_classify: List[str], 
+    classifier: Pipeline, 
+    candidate_labels: List[str], 
+    # This batch_size is passed to the pipeline's __call__ method.
+    # It can potentially override or inform the batching for this specific call.
+    batch_size_for_call: int = ragdoll_config.DEFAULT_CLASSIFICATION_BATCH_SIZE,
+    multi_label_classification: bool = False
+) -> List[Optional[Dict[str, Any]]]:
     """
-    Classifies a list of text chunks in batches using the provided zero-shot classifier pipeline.
-    Returns a list of dictionaries, each containing classification results for a corresponding chunk.
+    Classifies a list of text chunks using a pre-initialized zero-shot classifier.
+    The pipeline object handles internal batching. We can also suggest a batch_size for the call.
     """
-    # Basic validation for inputs
-    if classifier_pipeline is None or not chunks_to_classify: 
-        # If no classifier or no chunks, return a list of statuses indicating skipped classification
-        return [{"classification_status": "skipped_no_classifier_or_chunks"}] * len(chunks_to_classify)
-    if not candidate_labels: 
-        print("Classification Module: No candidate labels provided for classification. Skipping.")
+    if classifier is None or not hasattr(classifier, '__call__'):
+        print("Classification Module: Classifier not initialized or invalid. Skipping.")
+        return [{"classification_status": "skipped_no_classifier"}] * len(chunks_to_classify)
+    if not chunks_to_classify: 
+        print("Classification Module: No chunks to classify.")
+        return []
+    if not candidate_labels:
+        print("Classification Module: No candidate labels for classification. Skipping.")
         return [{"classification_status": "skipped_no_labels"}] * len(chunks_to_classify)
-    
-    all_classification_outputs = [] # To store results for all chunks
-    try:
-        # Process chunks in batches for better performance and memory management
-        for i in tqdm(range(0, len(chunks_to_classify), classification_batch_size), 
-                      desc=progress_desc, 
-                      disable=len(chunks_to_classify) < classification_batch_size * 2): # Disable progress bar for very small jobs
-            
-            current_batch_texts = chunks_to_classify[i : i + classification_batch_size]
-            if not current_batch_texts: continue # Should not happen with correct loop logic
 
-            # Perform zero-shot classification on the current batch.
-            # 'multi_label=False' implies we are interested in the single best label per chunk.
-            hf_pipeline_outputs = classifier_pipeline(current_batch_texts, candidate_labels=candidate_labels, multi_label=False) 
-            
-            # The pipeline might return a single dict if the batch size was 1. Standardize to a list.
-            if isinstance(hf_pipeline_outputs, dict) and len(current_batch_texts) == 1: 
-                hf_pipeline_outputs = [hf_pipeline_outputs]
-            elif not isinstance(hf_pipeline_outputs, list): 
-                print(f"  Classification Warning: Unexpected output type from classifier: {type(hf_pipeline_outputs)}. Expected list for batch. Batch size: {len(current_batch_texts)}")
-                # Add error status for each item in this problematic batch
-                all_classification_outputs.extend([{"classification_error": "unexpected_classifier_output_type"}] * len(current_batch_texts))
-                continue # Skip to the next batch
-            
-            # Process each result item from the Hugging Face pipeline output
-            for result_item_dict in hf_pipeline_outputs: 
-                all_classification_outputs.append({
-                    "top_label": result_item_dict["labels"][0] if result_item_dict.get("labels") and result_item_dict["labels"] else "N/A", 
-                    "top_label_score": float(result_item_dict["scores"][0]) if result_item_dict.get("scores") and result_item_dict["scores"] else 0.0, 
-                    "zero_shot_labels": result_item_dict.get("labels", []), # Full list of labels returned by HF (often all candidates)
-                    "zero_shot_scores": [float(s) for s in result_item_dict.get("scores", [])] # Corresponding scores
+    all_classification_results: List[Optional[Dict[str, Any]]] = []
+    
+    num_chunks = len(chunks_to_classify)
+    print(f"Classification Module: Starting classification for {num_chunks} chunks.")
+    # Log the batch_size the pipeline was initialized with (if accessible) and the one for the call.
+    init_bs_msg = "N/A (not exposed)"
+    if hasattr(classifier, 'batch_size') and classifier.batch_size is not None: init_bs_msg = str(classifier.batch_size)
+    elif hasattr(classifier, '_batch_size') and classifier._batch_size is not None: init_bs_msg = str(classifier._batch_size)
+    print(f"  Pipeline init batch_size: {init_bs_msg}. Batch_size for this call: {batch_size_for_call}.")
+
+    try:
+        # Option A: Pass List[str] directly + batch_size kwarg to the call
+        # This is often sufficient and simpler if the pipeline supports it well.
+        pipeline_outputs_iterator = classifier(
+            chunks_to_classify, # Pass List[str] directly
+            candidate_labels=candidate_labels, 
+            multi_label=multi_label_classification,
+            batch_size=batch_size_for_call # Explicitly pass batch_size to the call
+        )
+        
+        # Option B: If the "use a dataset" warning persists with Option A, use datasets.Dataset
+        # from datasets import Dataset 
+        # hf_dataset = Dataset.from_list([{"text": item} for item in chunks_to_classify])
+        # print(f"Classification Module: Using Hugging Face Dataset for processing.")
+        # pipeline_outputs_iterator = classifier(
+        #     hf_dataset,
+        #     candidate_labels=candidate_labels, 
+        #     multi_label=multi_label_classification
+        #     # batch_size for the call might also be passed here if using Dataset,
+        #     # but often the pipeline's init batch_size is primary when Dataset is input.
+        # )
+        
+        # tqdm will iterate over the results as the pipeline yields them.
+        # The pipeline processes internally in batches, then yields results.
+        # The progress bar will update per *result item*, not per batch processed internally by the pipeline.
+        for i, result_item in enumerate(tqdm(pipeline_outputs_iterator, total=num_chunks, desc="Classifying Chunks")):
+            if isinstance(result_item, dict) and "labels" in result_item and "scores" in result_item:
+                all_classification_results.append({
+                    "top_label": result_item["labels"][0] if result_item["labels"] else "N/A",
+                    "top_label_score": float(result_item["scores"][0]) if result_item["scores"] else 0.0,
+                    "zero_shot_labels": result_item.get("labels", []),
+                    "zero_shot_scores": [float(s) for s in result_item.get("scores", [])],
+                    "classification_status": "success"
                 })
-        return all_classification_outputs
-    except Exception as e_clf_batch: 
-        print(f"Classification Module Error: Exception during batch classification: {e_clf_batch}")
-        # If a batch-level error occurs, return an error status for all chunks
-        return [{"classification_error": str(e_clf_batch)}] * len(chunks_to_classify)
+            else:
+                status_note = "error_unexpected_pipeline_output_format"
+                if isinstance(result_item, Exception):
+                    status_note = f"error_item_processing_failed_in_pipeline: {str(result_item)[:100]}"
+                all_classification_results.append({
+                    "classification_status": status_note,
+                    "raw_output": str(result_item)[:200]
+                })
+        
+        if len(all_classification_results) != num_chunks:
+            print(f"  Classification Warning: Output result count ({len(all_classification_results)}) "
+                  f"does not match input chunk count ({num_chunks}). Some results may be missing or duplicated.")
+            # Pad if results are short (less likely if tqdm consumes the full iterator from pipeline)
+            while len(all_classification_results) < num_chunks:
+                all_classification_results.append({"classification_status": "error_missing_pipeline_output_item"})
+        print("Classification Module: Classification processing completed.")
+
+    except Exception as e_pipeline_call_error:
+        print(f"Classification Module Error: A major error occurred during the main pipeline classification call: {e_pipeline_call_error}")
+        # If the entire classifier(...) call fails, mark all as errored.
+        all_classification_results = [{"classification_status": "error_in_bulk_pipeline_call", "error_message": str(e_pipeline_call_error)}] * num_chunks
+            
+    return all_classification_results

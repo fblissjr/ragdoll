@@ -2,21 +2,19 @@
 # This module defines default configurations, constants, and model parameters
 # for the RAGdoll project. It helps centralize settings for easier management.
 
-import os # For os.path, os.cpu_count, and environment variable access
+import os 
 
 # --- Shared File Path Constants for Data Storage ---
-DEFAULT_SOURCE_DOCS_DIR = "data"
-
-# These define filenames used when saving processed data.
-VECTOR_STORE_SUBDIR_NAME = "vicinity_store" # Subdirectory within the main data_dir for Vicinity store
-TEXT_CHUNKS_FILENAME = "text_chunks.json"   # File storing all extracted text chunks
-CHUNK_IDS_FILENAME = "chunk_ids.json"       # File storing IDs for each chunk, corresponding to text_chunks
-DETAILED_CHUNK_METADATA_FILENAME = "detailed_chunk_metadata.json" # File for rich metadata of each chunk
-CHUNK_VECTORS_FILENAME = "chunk_vectors.npy" # Optional raw dump of chunk embeddings
-VISUALIZATION_DATA_FILENAME = "visualization_plot_data.json" # Data for UMAP visualization
+DEFAULT_SOURCE_DOCS_DIR = "data" # Default input directory for user documents
+VECTOR_STORE_SUBDIR_NAME = "vicinity_store" # Subdirectory within the output dir for Vicinity
+TEXT_CHUNKS_FILENAME = "text_chunks.json"   # Stores all extracted text chunks
+CHUNK_IDS_FILENAME = "chunk_ids.json"       # Stores unique IDs for each chunk
+DETAILED_CHUNK_METADATA_FILENAME = "detailed_chunk_metadata.json" # Stores rich metadata for each chunk
+CHUNK_VECTORS_FILENAME = "chunk_vectors.npy" # Stores raw embedding vectors for chunks
+VISUALIZATION_DATA_FILENAME = "visualization_plot_data.json" # Stores UMAP projection data
 
 # --- Default Candidate Labels for Zero-Shot Classification ---
-# A comprehensive list, can be overridden.
+# A comprehensive list, can be customized by the user.
 _DEFAULT_CLASSIFICATION_LABELS_FULL = [ 
     "Accounting", "Activism", "Advertising", "Aerospace Engineering", "Agriculture", "AI & Robotics",
     "Alternative Medicine", "Anatomy & Physiology", "Ancient Civilizations", "Animal Welfare", "Anthropology", "Archaeology",
@@ -107,80 +105,88 @@ _DEFAULT_CLASSIFICATION_LABELS_FULL = [
     "World Religions", "World War I", "World War II", "Writing & Composition", "Yoga & Meditation", "Youth Studies", "Zoology",
     "General Information", "Miscellaneous", "Other"
 ]
-# A shorter, more general list of classification labels.
+# A shorter list, often more practical for default zero-shot classification.
 DEFAULT_CLASSIFICATION_LABELS_SHORT = [
     "Technology", "Business", "Science", "Health", "Finance", "Law", "Politics", 
     "Education", "Environment", "Culture", "Arts", "Sports","Lifestyle", 
     "History", "Travel", "General Information", "Miscellaneous", "Other"
 ]
-# By default, the system uses the shorter list for classification tasks.
+# The actual default list used by the pipeline.
 DEFAULT_CLASSIFICATION_LABELS = DEFAULT_CLASSIFICATION_LABELS_SHORT
 
 
 # --- Default Model Names and Parameters ---
-# These specify the default machine learning models used in various pipeline stages.
-DEFAULT_PIPELINE_EMBEDDING_MODEL = "minishlab/potion-base-8M" # For generating embeddings of document chunks
-DEFAULT_QUERY_EMBEDDING_MODEL = "minishlab/potion-base-8M"   # For embedding user queries (often same as pipeline)
+# Default embedding model for creating vector representations of chunks during pipeline processing.
+DEFAULT_PIPELINE_EMBEDDING_MODEL = "minishlab/potion-base-8M" 
+# Default embedding model for vectorizing user queries at runtime (ideally matches pipeline model).
+DEFAULT_QUERY_EMBEDDING_MODEL = "minishlab/potion-base-8M"   
 
 # --- Processing Resource Defaults ---
-_DEFAULT_GPU_DEVICE_ID_PROCESSING_STATIC = 0 # Base default before env var override
-_DEFAULT_CHUNK_PROCESSING_WORKERS_STATIC = max(1, os.cpu_count() // 2 if os.cpu_count() else 1) # Use half of CPU cores if available
+# Static defaults, can be overridden by environment variables.
+_DEFAULT_GPU_DEVICE_ID_PROCESSING_STATIC = 0 
+_DEFAULT_CHUNK_PROCESSING_WORKERS_STATIC = max(1, os.cpu_count() // 2 if os.cpu_count() else 1) 
 
 # --- CHUNKER CONFIGURATION DEFAULTS ---
-# This dictionary stores default parameters for each supported Chonkie chunker type.
-# Keys within each chunker's dict aim to match the parameter names expected by the Chonkie library's constructors.
-# The pipeline_orchestrator maps CLI/API arguments to these internal names.
+# This dictionary holds the default parameters for each supported Chonkie chunker type.
+# Keys within each chunker's dictionary should generally match Chonkie's constructor arguments.
 CHUNKER_DEFAULTS = {
     "chonkie_token": { 
-        "tokenizer": "gpt2", 
-        "chunk_size": 256,   
-        "chunk_overlap": 0.0,
+        "tokenizer": "gpt2", # Chonkie TokenChunker expects 'tokenizer'
+        "chunk_size": 256,   # Target tokens per chunk
+        "chunk_overlap": 0.0, # Can be float (percentage) or int (tokens)
+        "return_type": "texts", # RAGdoll expects text strings from chunkers
     },
     "chonkie_sentence": { 
-        "tokenizer_or_token_counter": "ragdoll_utils.BGE_TOKENIZER_INSTANCE", # String placeholder
-        "chunk_size": 256,                
-        "chunk_overlap": 0.0,             
-        "min_sentences_per_chunk": 1,     
-        "min_characters_per_sentence": 12,
+        # Chonkie SentenceChunker uses 'tokenizer_or_token_counter'
+        "tokenizer_or_token_counter": "ragdoll_utils.BGE_TOKENIZER_INSTANCE", # Placeholder for RAGdoll's BGE tokenizer
+        "chunk_size": 256,                # Target tokens per chunk
+        "chunk_overlap": 0.0,             # Overlap
+        "min_sentences_per_chunk": 1,     # Minimum sentences to form a chunk
+        "min_characters_per_sentence": 12, # Minimum characters for a segment to be considered a sentence
+        "return_type": "texts",
     },
     "chonkie_recursive": { 
-        "tokenizer_or_token_counter": "ragdoll_utils.BGE_TOKENIZER_INSTANCE", # String placeholder
+        "tokenizer_or_token_counter": "ragdoll_utils.BGE_TOKENIZER_INSTANCE", 
         "chunk_size": 256,                
         "min_characters_per_chunk": 24,   
-        "rules": None, # Default to Chonkie's internal general separators. Can be "markdown" string or RecursiveRules object.
-        # "lang": "en", # Removed as it's usually a parameter to rules.from_recipe, not RecursiveChunker.__init__
+        "rules": None, # Default to Chonkie's internal general separators for RecursiveRules.
+                       # If 'rules' is set to a string like "markdown" by orchestrator, 
+                       # _init_worker_chunker will attempt to use RecursiveChunker.from_recipe.
+                       # 'lang' is handled by from_recipe, not a direct constructor arg here.
+        "return_type": "texts",
     },
     "chonkie_sdpm": { 
-        "embedding_model": "minishlab/potion-base-8M", 
-        "chunk_size": 256,                
-        "threshold": "auto",              
-        "similarity_window": 1,           
-        "min_sentences": 2,               
-        "skip_window": 5,                 
-        "mode": "window",                 
-        "min_chunk_size": 20,             
-        "min_characters_per_sentence": 12,
-        # "tokenizer_or_token_counter" removed, not directly used by SDPMChunker constructor
+        "embedding_model": "minishlab/potion-base-8M", # Internal embedding model for semantic comparisons
+        "chunk_size": 256,                # Target final chunk size in tokens
+        "threshold": "auto",              # Similarity threshold (auto, float 0-1, or int 1-100 percentile)
+        "similarity_window": 1,           # Window for similarity calculation
+        "min_sentences": 2,               # Initial sentences per group before merging
+        "skip_window": 5,                 # For double-pass merging
+        "mode": "window",                 # "cumulative" or "window" for grouping
+        "min_chunk_size": 20,             # Minimum tokens for a final chunk
+        "min_characters_per_sentence": 12, # For initial sentence splitting
+        "return_type": "texts",
     },
     "chonkie_semantic": { 
         "embedding_model": "minishlab/potion-base-8M",
         "chunk_size": 256, 
-        "threshold": 0.3, 
+        "threshold": 0.3, # Example fixed threshold
         "min_sentences": 2,
         "mode": "window",
         "similarity_window": 1,
         "min_chunk_size": 20,
         "min_characters_per_sentence": 12,
-        # "tokenizer_or_token_counter" removed
+        "return_type": "texts",
     },
     "chonkie_neural": { 
-        "model": "mirth/chonky_distilbert_base_uncased_1", 
-        "tokenizer": "mirth/chonky_distilbert_base_uncased_1", 
-        "stride": 128,                    
-        "min_characters_per_chunk": 30,   
+        "model": "mirth/chonky_distilbert_base_uncased_1", # Segmentation model
+        "tokenizer": "mirth/chonky_distilbert_base_uncased_1", # Usually same as model for NeuralChunker
+        "stride": 128,                    # Stride for model inference
+        "min_characters_per_chunk": 30,   # Minimum characters for a resulting chunk
+        "return_type": "texts",
     }
 }
-# Default chunker type to be used if not specified by the user.
+# Default chunker type for the entire pipeline if not specified by the user.
 DEFAULT_CHUNKER_TYPE = "chonkie_sdpm" 
 
 # --- Classification Defaults ---
@@ -189,13 +195,13 @@ DEFAULT_CLASSIFICATION_BATCH_SIZE = 16 # Batch size for classifying chunks
 
 # --- Reranking and RAG Defaults ---
 DEFAULT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2" # Cross-encoder for reranking
-DEFAULT_RERANKER_TOP_N = 7                # Number of chunks to return after reranking
+DEFAULT_RERANKER_TOP_N = 7                # Number of chunks to keep after reranking
 DEFAULT_RERANKER_BATCH_SIZE = 32          # Batch size for reranker model
 DEFAULT_RAG_INITIAL_K = 30                # Initial number of chunks to retrieve for RAG
 DEFAULT_RAG_MAX_CONTEXT_TOKENS = 6800     # Max tokens for LLM context window (estimated)
 
 # --- LLM Interaction Defaults ---
-_DEFAULT_LLM_API_URL_STATIC = "http://localhost:8080/v1/chat/completions" # Base default before env var
+_DEFAULT_LLM_API_URL_STATIC = "http://localhost:8080/v1/chat/completions" # Example local LLM server
 DEFAULT_LLM_MAX_GENERATION_TOKENS = 1536  # Max tokens the LLM should generate
 DEFAULT_LLM_TEMPERATURE = 0.5             # LLM temperature for generation
 DEFAULT_SYSTEM_PROMPT_RAG = """You are a helpful AI assistant. Answer the user's question based ONLY on the provided context.
@@ -220,59 +226,79 @@ Retrieved Context:
 ---
 
 Exploration Insights:"""
-DEFAULT_EXPLORE_MAX_CHUNKS_TO_SUMMARIZE = 7 # Max chunks to feed LLM for explore mode
-DEFAULT_EXPLORE_LLM_SUMMARY_MAX_TOKENS = 768 # Max tokens for LLM's explore summary
+DEFAULT_EXPLORE_MAX_CHUNKS_TO_SUMMARIZE = 7  # Max chunks for LLM explore mode
+DEFAULT_EXPLORE_LLM_SUMMARY_MAX_TOKENS = 768 # Max tokens for LLM explore summary
 DEFAULT_EXPLORE_LLM_SUMMARY_TEMPERATURE = 0.4 # Temperature for LLM explore summary
 
 # --- UMAP & Service Defaults ---
-DEFAULT_UMAP_NEIGHBORS = 15
-DEFAULT_UMAP_MIN_DIST = 0.1
-DEFAULT_UMAP_METRIC = "cosine"
-_DEFAULT_DATA_SERVICE_URL_STATIC = "http://localhost:8001" # Base default before env var
+DEFAULT_UMAP_NEIGHBORS = 15           # UMAP n_neighbors
+DEFAULT_UMAP_MIN_DIST = 0.1             # UMAP min_dist
+DEFAULT_UMAP_METRIC = "cosine"          # UMAP distance metric
+_DEFAULT_DATA_SERVICE_URL_STATIC = "http://localhost:8001" # RAGdoll API service URL
 
-# --- Environment Variable Handling for Overriding Defaults ---
-# This section allows configuration values to be overridden by environment variables.
-ENV_VAR_PREFIX = "RAGDOLL_" # Prefix for all RAGdoll specific environment variables
+# --- Environment Variable Handling ---
+# Prefix for RAGdoll-specific environment variables for clarity.
+ENV_VAR_PREFIX = "RAGDOLL_"
 
+# Define environment variable names
 ENV_GPU_DEVICE_ID = f"{ENV_VAR_PREFIX}GPU_DEVICE_ID"
 ENV_LLM_API_URL = f"{ENV_VAR_PREFIX}LLM_API_URL"
 ENV_DATA_SERVICE_URL = f"{ENV_VAR_PREFIX}DATA_SERVICE_URL"
-ENV_HF_HUB_OFFLINE = f"{ENV_VAR_PREFIX}HF_HUB_OFFLINE" # For HuggingFace Hub offline mode
-ENV_TRANSFORMERS_OFFLINE = "TRANSFORMERS_OFFLINE" # Standard HF var
-ENV_LOG_LEVEL = f"{ENV_VAR_PREFIX}LOG_LEVEL" # For configuring application log level
+ENV_HF_HUB_OFFLINE = f"{ENV_VAR_PREFIX}HF_HUB_OFFLINE" # RAGdoll specific offline flag
+ENV_TRANSFORMERS_OFFLINE = "TRANSFORMERS_OFFLINE"      # Standard Hugging Face offline flag
+ENV_TOKENIZERS_PARALLELISM = "TOKENIZERS_PARALLELISM"  # Hugging Face tokenizer parallelism flag
+ENV_LOG_LEVEL = f"{ENV_VAR_PREFIX}LOG_LEVEL"         # For configuring application log level
 
+# Helper functions to safely get environment variables with type conversion and defaults.
 def get_env_var_as_int(var_name: str, default: int) -> int:
-    """Safely retrieves an environment variable and casts it to an integer."""
-    try: 
+    """Retrieves an environment variable and casts it to int, or returns default."""
+    try:
         return int(os.environ.get(var_name, str(default)))
     except ValueError: 
-        print(f"[Config Warning] Invalid integer value for env var {var_name}. Using default: {default}")
+        print(f"[Config Warning] Invalid integer value for environment variable {var_name}. Using default: {default}")
         return default
 
 def get_env_var_as_bool(var_name: str, default: bool) -> bool:
-    """Safely retrieves an environment variable and casts it to a boolean."""
+    """Retrieves an environment variable and casts it to bool, or returns default.
+    Considers 'true', '1', 't', 'y', 'yes' as True (case-insensitive).
+    """
     val = os.environ.get(var_name, str(default)).lower()
     return val in ['true', '1', 't', 'y', 'yes']
 
-# Override defaults with environment variables if set
+# Set runtime defaults based on environment variables or static defaults.
 DEFAULT_GPU_DEVICE_ID_PROCESSING = get_env_var_as_int(ENV_GPU_DEVICE_ID, _DEFAULT_GPU_DEVICE_ID_PROCESSING_STATIC)
-DEFAULT_CHUNK_PROCESSING_WORKERS = max(1, os.cpu_count() // 2 if os.cpu_count() else 1) # This is usually system-dependent
+DEFAULT_CHUNK_PROCESSING_WORKERS = _DEFAULT_CHUNK_PROCESSING_WORKERS_STATIC # Not typically set by env var, uses CPU count
 
 DEFAULT_LLM_API_URL = os.environ.get(ENV_LLM_API_URL, _DEFAULT_LLM_API_URL_STATIC)
 DEFAULT_DATA_SERVICE_URL = os.environ.get(ENV_DATA_SERVICE_URL, _DEFAULT_DATA_SERVICE_URL_STATIC)
 
-HF_HUB_OFFLINE_RAGDOLL = get_env_var_as_bool(ENV_HF_HUB_OFFLINE, False) 
-HF_HUB_OFFLINE_TRANSFORMERS = get_env_var_as_bool(ENV_TRANSFORMERS_OFFLINE, False)
-# If either is set, enforce offline mode for Hugging Face libraries
-ACTUAL_HF_OFFLINE_MODE = HF_HUB_OFFLINE_RAGDOLL or HF_HUB_OFFLINE_TRANSFORMERS
-
+# Handle Hugging Face offline mode settings.
+HF_HUB_OFFLINE_RAGDOLL_SETTING = get_env_var_as_bool(ENV_HF_HUB_OFFLINE, False) 
+HF_HUB_OFFLINE_TRANSFORMERS_SETTING = get_env_var_as_bool(ENV_TRANSFORMERS_OFFLINE, False)
+# If either RAGDOLL_HF_HUB_OFFLINE or TRANSFORMERS_OFFLINE is true, enable offline mode.
+ACTUAL_HF_OFFLINE_MODE = HF_HUB_OFFLINE_RAGDOLL_SETTING or HF_HUB_OFFLINE_TRANSFORMERS_SETTING
 DEFAULT_LOG_LEVEL = os.environ.get(ENV_LOG_LEVEL, "INFO").upper()
 
 if ACTUAL_HF_OFFLINE_MODE:
-    os.environ["TRANSFORMERS_OFFLINE"] = "1" 
-    os.environ["HF_HUB_OFFLINE"] = "1"       
+    os.environ["TRANSFORMERS_OFFLINE"] = "1" # Set for underlying Hugging Face libraries
+    os.environ["HF_HUB_OFFLINE"] = "1"       # Set for Hugging Face Hub client
     print("[Config] HuggingFace Hub and Transformers set to OFFLINE mode based on environment variable(s).")
 
+# Configure Tokenizers Parallelism globally at startup.
+# This helps prevent issues when using tokenizers within multiprocessing.
+TOKENIZERS_PARALLELISM_VALUE_ENV = os.environ.get(ENV_TOKENIZERS_PARALLELISM, "false").lower()
+if TOKENIZERS_PARALLELISM_VALUE_ENV in ["false", "0"]:
+    os.environ[ENV_TOKENIZERS_PARALLELISM] = "false"
+    print(f"[Config] HuggingFace Tokenizer parallelism explicitly disabled (TOKENIZERS_PARALLELISM=false).")
+elif TOKENIZERS_PARALLELISM_VALUE_ENV in ["true", "1"]:
+    os.environ[ENV_TOKENIZERS_PARALLELISM] = "true"
+    print(f"[Config] HuggingFace Tokenizer parallelism explicitly enabled (TOKENIZERS_PARALLELISM=true).")
+else: 
+    # If an invalid value is set, default to disabling it for safety with multiprocessing.
+    os.environ[ENV_TOKENIZERS_PARALLELISM] = "false" 
+    print(f"[Config] Invalid value for TOKENIZERS_PARALLELISM ('{TOKENIZERS_PARALLELISM_VALUE_ENV}'). Defaulting to disabling parallelism.")
+
+# Print some key resolved configurations for user awareness at startup.
 print(f"[Config] Log level configured to: {DEFAULT_LOG_LEVEL}")
 print(f"[Config] Default GPU Device ID for processing: {DEFAULT_GPU_DEVICE_ID_PROCESSING}")
 print(f"[Config] Default LLM API URL: {DEFAULT_LLM_API_URL}")
