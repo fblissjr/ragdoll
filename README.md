@@ -3,7 +3,7 @@
   <img src="assets/ragdoll_banner.jpg" width="400" alt="ragdoll banner" />
 </p>
 
-experimental rag and data processing system to see if rag works better with better data modeling, more creative interface, static embedding models, better chunking, data modeling, and other experimental stuff.
+experimental rag and data processing with static embedding models via [model2vec](https://github.com/MinishLab/model2vec), eventually LLM-driven semantic data modeling like meta's lcm paper, and other experimental stuff.
 
 the system features a modular Python backend service, exposed via FastAPI - cient interactions are available via a big and lofty Python CLI, with a modern interactive frontend potentially coming.
 
