@@ -1,4 +1,4 @@
-# RAGdoll: Experimenting with RAG Again
+# RAGdoll: Experimenting with RAG Again (now with static embedding models)
 <p align="left">
   <img src="assets/ragdoll_banner.jpg" width="400" alt="ragdoll banner" />
 </p>
